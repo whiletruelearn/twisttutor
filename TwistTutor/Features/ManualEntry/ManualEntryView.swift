@@ -6,6 +6,9 @@ struct ManualEntryView: View {
     @State private var entry = ManualCubeEntry()
     @State private var scene = CubeScene()
     @State private var reviewing = false
+    @State private var inspecting = false
+    @State private var showDetails = false
+    @Environment(\.dynamicTypeSize) private var textSize
     private var faceIndex: Int { ManualCubeEntry.faceOrder.firstIndex(of: face)! }
     @State private var face: CubeFaceID = .front
     @State private var paint: CubeColorID? = .white
@@ -15,103 +18,66 @@ struct ManualEntryView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(reviewing ? "Check your cube" : "Face \(faceIndex + 1) of 6 · \(face.title)").font(.title3.bold())
-                    Spacer()
-                    Menu("Entry options", systemImage: "ellipsis.circle") {
-                        Button("Load solved example") { loadExample(scrambled: false) }
-                        Button("Load mixed example") { loadExample(scrambled: true) }
-                        Button("Clear all stickers", role: .destructive) { confirmClear = true }
-                    }
-                }
-                Text("\(entry.completedFaceCount) of 6 faces entered · \(entry.filledCount)/54 stickers")
-                    .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-                ProgressView(value: Double(entry.filledCount), total: 54)
-                if reviewing {
-                    ScrollView(.horizontal) {
-                        HStack {
-                            ForEach(ManualCubeEntry.faceOrder, id: \.self) { item in
-                                Button { selectFace(item) } label: {
-                                    VStack(spacing: 4) {
-                                        Text(item.title).font(.subheadline.bold())
-                                        Text("\(entry.filledCount(on: item))/9").font(.caption)
-                                    }.padding(.horizontal, 10).frame(minHeight: 44)
-                                }
-                                .buttonStyle(.bordered)
-                                .accessibilityLabel("\(item.title) face, \(entry.filledCount(on: item)) of 9 stickers")
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 0) {
+                    faceProgress.padding(.horizontal, 20).padding(.top, 8)
+                    ZStack(alignment: .topTrailing) {
+                        CubeViewport(scene: scene)
+                            .accessibilityLabel(reviewing || inspecting ? "Cube preview. Drag to inspect." : "\(face.title) face. Painting view is fixed. Sticker buttons are available in Help.")
+                        VStack(spacing: 12) {
+                            stageButton("Undo", icon: "arrow.uturn.backward", disabled: !entry.canUndo) { entry.undo(); syncScene() }
+                            stageButton(inspecting || reviewing ? "Reset" : "Inspect", icon: inspecting || reviewing ? "viewfinder" : "cube.transparent") {
+                                if reviewing || inspecting { scene.resetView() }
+                                else { inspecting = true; syncScene(); scene.resetView() }
                             }
-                        }
+                        }.padding(.top, 16).padding(.trailing, 16)
                     }
-                }
-                if !reviewing {
-                    Label("\(faceDescription(ManualCubeEntry.topNeighbor(of: face))) edge at top", systemImage: "arrow.up")
-                        .font(.subheadline)
-                }
-                CubeViewport(scene: scene).frame(height: 260)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .accessibilityLabel(reviewing ? "Cube preview. Drag to inspect." : "\(face.title) face. Drag to rotate. Use accessible sticker buttons below to paint.")
-                HStack {
-                    Button(reviewing ? "Reset view" : "Face front", systemImage: "viewfinder") {
-                        if reviewing { scene.resetView() } else { scene.focus(on: face) }
-                    }
-                    Spacer()
-                    Button("Undo", systemImage: "arrow.uturn.backward") { entry.undo(); syncScene() }
-                        .disabled(!entry.canUndo)
-                }
-                if !reviewing {
-                    Text("Only the \(face.title.lowercased()) face is painted. Gray stickers are empty.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    DisclosureGroup("How to orient the cube") {
-                        Text("Choose your Up and Front faces first and keep those names fixed. Rotate the whole cube to view each face; don’t twist its layers. Match the named edge at the top, select a color, then tap its stickers.")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    DisclosureGroup("Sticker buttons") {
+                    .frame(height: max(240, geometry.size.height - (textSize.isAccessibilitySize ? 480 : inspecting && !reviewing ? 220 : 360)))
+                    VStack(spacing: 6) {
+                        Text(reviewing ? "Ready for the first move?" : inspecting ? "Take a look around" : "Match the \(face.title.lowercased()) face")
+                            .font(.title2.bold()).fontDesign(.rounded)
+                        Text(reviewing ? "Check all six sides. Tap a face above to edit." : inspecting ? "Drag to rotate. Your colors stay unchanged." : "Keep \(faceDescription(ManualCubeEntry.topNeighbor(of: face))) at the top.")
+                            .font(.subheadline).foregroundStyle(CubeStyle.secondary).multilineTextAlignment(.center)
+                    }.padding(.horizontal, 24).padding(.bottom, 20)
+                    entryDrawer
+                }.frame(maxWidth: 700).frame(maxWidth: .infinity)
+            }
+        }
+        .background(CubeStyle.stage.ignoresSafeArea()).foregroundStyle(.white)
+        .navigationTitle(reviewing ? "Review your cube" : "Your cube").navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(CubeStyle.stage, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Help & sticker buttons", systemImage: "questionmark.circle") { showDetails = true }
+                    Button("Load solved example") { loadExample(scrambled: false) }
+                    Button("Load mixed example") { loadExample(scrambled: true) }
+                    Button("Clear all stickers", role: .destructive) { confirmClear = true }
+                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                .accessibilityLabel("Entry options")
+            }
+        }
+        .sheet(isPresented: $showDetails) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        Text("Keep your bearings").font(.title2.bold())
+                        Text("Choose a front and top face on your real cube. Keep those names fixed. Rotate the whole cube to match the face shown here; don’t turn individual layers yet.")
+                        Text("\(face.title) sticker buttons").font(.headline)
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
                             ForEach(0..<9, id: \.self) { sticker(at: face.rawValue * 9 + $0) }
-                        }.frame(maxWidth: 240).frame(maxWidth: .infinity)
-                    }
-                }
-                validationFeedback
-
-            }
-            .padding(20).frame(maxWidth: 560).frame(maxWidth: .infinity)
+                        }.frame(maxWidth: 300).frame(maxWidth: .infinity)
+                        palette
+                        validationFeedback
+                    }.padding(24)
+                }.navigationTitle("Entry help").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { Button("Done") { showDetails = false } }
+            }.foregroundStyle(.primary).environment(\.colorScheme, .light)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 10) {
-                if !reviewing { palette }
-                if entry.session.phase == .calculatingSolution {
-                    ProgressView("Finding a verified solution…")
-                    Button("Cancel calculation") { entry.session.cancelSolutionCalculation() }
-                } else {
-                    if reviewing {
-                        Button("Solve my cube") { solve() }
-                            .buttonStyle(.borderedProminent).disabled(!entry.canSolve)
-                    } else {
-                        HStack {
-                            Button("Previous face") { selectFace(ManualCubeEntry.faceOrder[faceIndex - 1]) }
-                                .disabled(faceIndex == 0)
-                            Spacer()
-                            if faceIndex < 5 {
-                                Button("Next face") { selectFace(ManualCubeEntry.faceOrder[faceIndex + 1]) }
-                                    .buttonStyle(.borderedProminent)
-                            } else {
-                                Button("Review cube") { review() }.buttonStyle(.borderedProminent)
-                            }
-                        }
-                        if entry.filledCount == 54 && faceIndex < 5 { Button("Review cube") { review() } }
-                    }
-                }
-                Text(entry.validation?.isValid == false ? "Check colors — scroll for details" : "\(entry.filledCount) of 54 stickers entered")
-                    .font(.footnote.monospacedDigit())
-            }
-            .padding().frame(maxWidth: .infinity).background(Color(uiColor: .systemGroupedBackground))
-        }
-        .navigationTitle("Your cube").navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Clear all 54 stickers?", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Clear stickers", role: .destructive) { entry.clear(); errorMessage = nil; selectFace(.front); syncScene() }
+            Button("Clear stickers", role: .destructive) { entry.clear(); errorMessage = nil; selectFace(.front) }
         }
         .navigationDestination(isPresented: $showSolution) {
             if let solution = entry.session.solution {
@@ -122,12 +88,71 @@ struct ManualEntryView: View {
         }
         .onChange(of: showSolution) { _, presented in if !presented { entry.session.leave() } }
         .onChange(of: entry.session.solution) { _, solution in showSolution = solution != nil }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active { entry.session.cancelSolutionCalculation() }
-        }
-        .onAppear { syncScene(); if reviewing { scene.resetView() } else { scene.focus(on: face) } }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { entry.session.cancelSolutionCalculation() } }
+        .onAppear { syncScene(); if reviewing || inspecting { scene.resetView() } else { scene.focus(on: face) } }
         .onDisappear { entry.session.cancelSolutionCalculation(); scene.onPaint = nil }
+    }
 
+    private var faceProgress: some View {
+        HStack(spacing: 4) {
+            ForEach(ManualCubeEntry.faceOrder, id: \.self) { item in
+                Button { selectFace(item) } label: {
+                    VStack(spacing: 7) {
+                        Text(item.title).font(.caption.weight(face == item && !reviewing ? .bold : .regular))
+                        Capsule().fill(entry.filledCount(on: item) == 9 ? Color.green : face == item && !reviewing ? Color.white : Color.white.opacity(0.18)).frame(height: 3)
+                    }.frame(maxWidth: .infinity, minHeight: 44)
+                }.buttonStyle(.plain)
+                    .foregroundStyle(face == item && !reviewing ? Color.white : CubeStyle.secondary)
+                    .accessibilityLabel("\(item.title), \(entry.filledCount(on: item)) of 9 stickers")
+                    .accessibilityAddTraits(face == item && !reviewing ? .isSelected : [])
+            }
+        }
+    }
+
+    private func stageButton(_ title: String, icon: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon).font(.title3)
+                Text(title).font(.caption2)
+            }.frame(width: 58, height: 58)
+                .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 16))
+        }.buttonStyle(.plain).disabled(disabled).opacity(disabled ? 0.35 : 1)
+    }
+
+    private var entryDrawer: some View {
+        VStack(spacing: 14) {
+            if inspecting && !reviewing {
+                Button { inspecting = false; syncScene(); scene.focus(on: face) } label: {
+                    Text("Back to painting").frame(maxWidth: .infinity)
+                }.buttonStyle(CubePrimaryButton())
+            } else {
+                if !reviewing { palette }
+                if entry.session.phase == .calculatingSolution {
+                    ProgressView("Finding your solution…")
+                    Button("Cancel") { entry.session.cancelSolutionCalculation() }
+                } else if reviewing {
+                    validationFeedback
+                    Button { solve() } label: { Text("Show me the moves").frame(maxWidth: .infinity) }
+                        .buttonStyle(CubePrimaryButton()).disabled(!entry.canSolve)
+                } else {
+                    HStack(spacing: 12) {
+                        Button { selectFace(ManualCubeEntry.faceOrder[faceIndex - 1]) } label: {
+                            Image(systemName: "arrow.left").frame(width: 48, height: 52)
+                        }.disabled(faceIndex == 0).accessibilityLabel("Previous face")
+                        Button {
+                            if entry.filledCount == 54 || faceIndex == 5 { review() }
+                            else { selectFace(ManualCubeEntry.faceOrder[faceIndex + 1]) }
+                        } label: {
+                            Text(entry.filledCount == 54 || faceIndex == 5 ? "Review cube" : "Continue").frame(maxWidth: .infinity)
+                        }.buttonStyle(CubePrimaryButton()).disabled(entry.filledCount(on: face) != 9)
+                    }
+                    if entry.filledCount(on: face) != 9 {
+                        Text("\(9 - entry.filledCount(on: face)) stickers left on this face").font(.caption).foregroundStyle(Color(white: 0.35))
+                    }
+                    if let errorMessage { Text(errorMessage).font(.caption).foregroundStyle(.red) }
+                }
+            }
+        }.cubeDrawer()
     }
 
     private var palette: some View {
@@ -138,13 +163,13 @@ struct ManualEntryView: View {
                 Button("Erase", systemImage: "eraser") { paint = nil }
                     .accessibilityAddTraits(paint == nil ? .isSelected : [])
             }
-            HStack(spacing: 4) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: textSize.isAccessibilitySize ? 3 : 6), spacing: 8) {
                 ForEach(CubeColorID.allCases, id: \.self) { color in
                     Button { paint = color } label: {
                         VStack(spacing: 3) {
-                            Circle().fill(Color(uiColor: color.uiColor)).frame(width: 28, height: 28)
-                                .overlay(Circle().stroke(.gray, lineWidth: 1))
-                                .overlay { if paint == color { Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.black) } }
+                            RoundedRectangle(cornerRadius: 12).fill(Color(uiColor: color.uiColor)).frame(height: 44)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(.black.opacity(0.15), lineWidth: 1))
+                                .overlay { if paint == color { Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(.black, .white) } }
                             Text(color.rawValue.capitalized).font(.caption2)
                             Text(entry.count(color) > 9 ? "\(entry.count(color) - 9) extra" : "\(9 - entry.count(color)) left")
                                 .font(.caption2.monospacedDigit())
@@ -161,6 +186,7 @@ struct ManualEntryView: View {
     }
 
     private func selectFace(_ selected: CubeFaceID) {
+        inspecting = false
         reviewing = false
         face = selected
         syncScene()
@@ -175,16 +201,17 @@ struct ManualEntryView: View {
 
     private func syncScene() {
         scene.showEntry(entry.stickers.map { $0?.colorID })
-        scene.onPaint = reviewing ? nil : { index in
+        scene.allowsOrbit = reviewing || inspecting
+        scene.onPaint = reviewing || inspecting ? nil : { index in
             do { try entry.setColor(paint, at: index); errorMessage = nil; syncScene() }
             catch { errorMessage = "That sticker could not be updated. Please try again." }
         }
     }
 
     private func faceDescription(_ face: CubeFaceID) -> String {
-        let name = "\(face.title) (\(face.notation))"
+        let name = "the \(face.title.lowercased()) edge"
         guard let color = entry.stickers[face.rawValue * 9 + 4]?.colorID else { return name }
-        return "\(color.rawValue.capitalized) / \(name)"
+        return "\(color.rawValue) (\(face.title.lowercased()))"
     }
 
     private func sticker(at index: Int) -> some View {
@@ -223,7 +250,7 @@ struct ManualEntryView: View {
             }
         } else {
             Text("Fill the remaining \(54 - entry.filledCount) stickers to check whether this cube can be solved.")
-                .font(.subheadline).foregroundStyle(.secondary)
+                .font(.subheadline).foregroundStyle(Color(white: 0.35))
         }
         if let message = errorMessage ?? entry.session.errorMessage {
             Text(message).foregroundStyle(.red).font(.subheadline)

@@ -5,55 +5,108 @@ struct ContentView: View {
     @State private var scene = CubeScene()
     @Environment(\.scenePhase) private var scenePhase
 
+
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                ScrollView {
-                    VStack(spacing: 20) {
-                        VStack(spacing: 4) {
-                            Text("Let’s solve your cube").font(.title2.bold())
-                            Text("Match the colors on your cube, then follow each move in 3D.")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        CubeViewport(scene: scene)
-                            .frame(height: min(300, max(220, geometry.size.height * 0.34)))
-                            .overlay(alignment: .bottomTrailing) {
-                                Button { scene.resetView() } label: {
-                                    Label("Reset view", systemImage: "viewfinder")
-                                        .font(.subheadline)
-                                }.buttonStyle(.bordered).padding(8)
-                            }
+                VStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Your cube.\nLet’s solve it.")
+                            .font(.largeTitle.weight(.bold)).fontDesign(.rounded)
+                        Text("Your cube. One move at a time.")
+                            .font(.body).foregroundStyle(CubeStyle.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
+                    CubeViewport(scene: scene)
+                        .frame(maxHeight: .infinity)
+                        .accessibilityLabel("Cube preview. Drag to explore.")
+                    VStack(spacing: 14) {
+                        Text("Match your colors, then follow the moves.")
+                            .font(.subheadline).foregroundStyle(Color(white: 0.35))
                         NavigationLink { ManualEntryView() } label: {
-                            Label("Enter my cube", systemImage: "cube")
-                                .font(.headline).frame(maxWidth: .infinity, minHeight: 44)
-                        }.buttonStyle(.borderedProminent)
-                        DisclosureGroup("Explore moves") {
-                            controls
-                            turnControls
-                        }
-                    }
-                    .padding(.horizontal, 20).padding(.vertical, 16)
-                    .frame(maxWidth: 620).frame(maxWidth: .infinity)
+                            Text("Let’s solve your cube").frame(maxWidth: .infinity)
+                        }.buttonStyle(CubePrimaryButton())
+                        NavigationLink("Just explore") { CubeExplorerView() }
+                            .frame(minHeight: 44)
+                    }.cubeDrawer()
                 }
-                .background(Color(uiColor: .systemGroupedBackground))
+                .frame(maxWidth: 700).frame(maxWidth: .infinity)
             }
-            .navigationTitle("TwistTutor")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Solved cube") { scene.loadExample(scrambled: false) }
-                        Button("Mixed cube") { scene.loadExample(scrambled: true) }
-                    } label: { Label("Examples", systemImage: "cube") }
-                    .disabled(scene.playback.isBusy)
-                }
-            }
-        }
+            .background(CubeStyle.stage.ignoresSafeArea())
+            .foregroundStyle(.white)
+            .navigationTitle("TwistTutor").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(CubeStyle.stage, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+
+        }.tint(CubeStyle.action)
+        .onAppear { scene.showsTurnGuide = false; scene.refreshHighlights() }
         .onChange(of: scene.selectedFace) { _, _ in scene.refreshHighlights() }
         .onChange(of: scene.amount) { _, _ in scene.refreshHighlights() }
         .onChange(of: scene.highlightPiece) { _, _ in scene.refreshHighlights() }
         .onChange(of: scenePhase) { _, phase in if phase != .active { scene.cancel() } }
+    }
+
+}
+
+#Preview { ContentView() }
+
+// THESIS: Cube first; the object leads and controls stay at the edge.
+// OWN-WORLD: Slate navy stage, white working tray, rounded system headings, blue action.
+// STORY: Match a physical cube, inspect it, then follow one verified move at a time.
+// FIRST VIEWPORT: Native navigation, generous cube stage, compact instruction and bottom action.
+// FORM: Full-screen object workspace, approved Cube first direction (abdd855a).
+// FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+
+enum CubeStyle {
+    static let stageUIColor = UIColor(red: 0.075, green: 0.12, blue: 0.19, alpha: 1)
+    static let stage = Color(uiColor: stageUIColor)
+    static let action = Color(red: 0.06, green: 0.28, blue: 0.72)
+    static let secondary = Color(red: 0.72, green: 0.78, blue: 0.86)
+}
+
+struct CubePrimaryButton: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.headline).padding(.horizontal, 20).frame(minHeight: 52)
+            .foregroundStyle(enabled ? Color.white : Color.secondary)
+            .background(enabled ? CubeStyle.action : Color.gray.opacity(0.16), in: RoundedRectangle(cornerRadius: 18))
+            .opacity(configuration.isPressed ? 0.8 : 1)
+    }
+}
+
+extension View {
+    func cubeDrawer() -> some View {
+        self.padding(20).frame(maxWidth: .infinity)
+            .foregroundStyle(Color.primary).background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 28))
+            .environment(\.colorScheme, .light).tint(CubeStyle.action)
+    }
+}
+
+private struct CubeExplorerView: View {
+    @State private var scene = CubeScene()
+    @Environment(\.scenePhase) private var scenePhase
+    var body: some View {
+        VStack(spacing: 0) {
+            CubeViewport(scene: scene).frame(height: 260)
+            ScrollView {
+                VStack(spacing: 20) { controls; turnControls }.cubeDrawer()
+            }
+        }.frame(maxWidth: 700).frame(maxWidth: .infinity).background(CubeStyle.stage.ignoresSafeArea())
+            .navigationTitle("Explore moves").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(CubeStyle.stage, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                Menu {
+                    Button("Reset view") { scene.resetView() }
+                    Button("Solved cube") { scene.loadExample(scrambled: false) }
+                    Button("Mixed cube") { scene.loadExample(scrambled: true) }
+                } label: { Image(systemName: "ellipsis") }.accessibilityLabel("Cube options")
+            }
+            .onChange(of: scene.selectedFace) { _, _ in scene.refreshHighlights() }
+            .onChange(of: scene.amount) { _, _ in scene.refreshHighlights() }
+            .onChange(of: scene.highlightPiece) { _, _ in scene.refreshHighlights() }
+            .onChange(of: scenePhase) { _, phase in if phase != .active { scene.cancel() } }
+            .onDisappear { scene.cancel() }
     }
 
     private var controls: some View {
@@ -63,7 +116,7 @@ struct ContentView: View {
                 Spacer()
                 if let index = scene.selectedIndex {
                     Text("\(scene.playback.cube.stickers[index].colorID.rawValue.capitalized) · \(CubeFaceID(rawValue: index / 9)!.title) \(index % 9 + 1)")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(Color(white: 0.35))
                 }
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 8) {
@@ -85,7 +138,7 @@ struct ContentView: View {
             }.pickerStyle(.menu).disabled(scene.playback.isBusy)
 
             Text("Directions are viewed looking straight at the selected face.")
-                .font(.footnote).foregroundStyle(.secondary)
+                .font(.footnote).foregroundStyle(Color(white: 0.35))
             HStack {
                 Toggle("Slow motion", isOn: $scene.slow).disabled(scene.playback.isBusy)
                 Spacer(minLength: 24)
@@ -104,13 +157,11 @@ struct ContentView: View {
                       systemImage: scene.amount == .counterclockwise ? "arrow.counterclockwise" : "arrow.clockwise")
                     .font(.headline).frame(maxWidth: .infinity, minHeight: 36)
             }
-            .buttonStyle(.borderedProminent).disabled(scene.playback.isBusy)
+            .buttonStyle(CubePrimaryButton()).disabled(scene.playback.isBusy)
             .accessibilityHint("Turns the \(scene.selectedFace.title.lowercased()) face. Replay shows the last turn again without changing the result.")
             Text(scene.playback.activeTurn.map { "Playing \($0.move.notation)…" } ?? scene.playback.lastTurn.map { "Last turn: \($0.move.notation)" } ?? "Choose a face, then try a turn.")
-                .font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                .font(.footnote).foregroundStyle(Color(white: 0.35)).frame(maxWidth: .infinity)
                 .accessibilityIdentifier("playbackStatus")
         }
     }
 }
-
-#Preview { ContentView() }

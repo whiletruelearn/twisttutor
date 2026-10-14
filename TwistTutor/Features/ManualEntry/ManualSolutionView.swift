@@ -7,7 +7,7 @@ import AppWorkflow
 struct ManualSolutionView: View {
     let solution: VerifiedSolution
     let onComplete: () -> Void
-    @ScaledMetric private var stepStripHeight = 88
+    @ScaledMetric private var stepStripHeight = 72
     @State private var scene: CubeScene
     @Environment(\.scenePhase) private var scenePhase
 
@@ -20,54 +20,76 @@ struct ManualSolutionView: View {
         _scene = State(initialValue: scene)
     }
 
+    @Environment(\.dynamicTypeSize) private var textSize
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                Text(scene.playback.isSolutionComplete ? "Cube solved" : "Your verified solution")
-                    .font(.title2.bold())
-                Text(solution.moves.isEmpty ? "Your entry is already solved. No turns needed." : "\(scene.playback.completedMoveCount) of \(solution.moves.count) moves completed")
-                    .foregroundStyle(.secondary).accessibilityIdentifier("solutionProgress")
-                CubeViewport(scene: scene).frame(height: 300)
-                Button("Reset view", systemImage: "viewfinder") { scene.resetView() }
-                if let move = scene.playback.activeTurn?.move ?? scene.playback.nextMove {
-                    VStack(spacing: 6) {
-                        Text("\(stepAction): \(move.notation)").font(.title.bold())
-                        Text("\(move.face.title) face · \(direction(move.amount))")
-                        Text("Viewed looking straight at that face.").font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                Toggle("Slow motion", isOn: $scene.slow).disabled(scene.playback.isBusy)
-                HStack {
-                    Button("Replay last", systemImage: "arrow.counterclockwise") { scene.replay() }
-                        .disabled(scene.playback.lastTurn == nil || scene.playback.isBusy || scene.isAutoPlaying)
-                    Spacer()
-                    Button("Restart") { scene.restartSolution() }
-                }
-                Text("This test flow animates the entered cube. Physical-cube guidance and mistake recovery come in a later update.")
-                    .font(.footnote).foregroundStyle(.secondary)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 0) {
+                    HStack {
+                        Text(scene.playback.isSolutionComplete ? "You did it." : "One twist at a time.")
+                            .font(.title2.bold()).fontDesign(.rounded)
+                        Spacer()
+                        Text("\(scene.playback.completedMoveCount) / \(solution.moves.count)")
+                            .font(.subheadline.monospacedDigit()).foregroundStyle(CubeStyle.secondary)
+                            .accessibilityIdentifier("solutionProgress")
+                    }.padding(24)
+                    CubeViewport(scene: scene)
+                        .frame(height: max(220, geometry.size.height - (textSize.isAccessibilitySize ? 440 : 330)))
+                        .overlay(alignment: .topTrailing) {
+                            Button { scene.resetView() } label: {
+                                Image(systemName: "viewfinder").font(.title3).frame(width: 48, height: 48)
+                                    .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+                            }.buttonStyle(.plain).accessibilityLabel("Reset cube view").padding(.trailing, 20)
+                        }
+                    VStack(spacing: 14) {
+                        if let move = scene.playback.activeTurn?.move ?? scene.playback.nextMove {
+                            HStack(alignment: .top, spacing: 14) {
+                                Text(move.notation).font(.largeTitle.bold()).fontDesign(.rounded)
+                                    .frame(minWidth: 54)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(stepAction): \(move.face.title.lowercased()) face").font(.headline)
+                                    Text("Turn \(direction(move.amount)), looking at that face.")
+                                        .font(.subheadline).foregroundStyle(Color(white: 0.35))
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        } else {
+                            Label("Your cube is solved", systemImage: "checkmark.circle.fill").font(.title2.bold()).foregroundStyle(.green)
+                        }
+                        if !solution.moves.isEmpty { stepStrip }
+                        HStack(spacing: 12) {
+                            Button { scene.previousStep() } label: {
+                                Image(systemName: "backward.end.fill").frame(width: 48, height: 52)
+                            }.disabled(!scene.playback.canGoBack || scene.isAutoPlaying)
+                                .accessibilityLabel("Previous step").accessibilityIdentifier("previousStep")
+                            if scene.playback.isBusy || scene.isAutoPlaying {
+                                Button { scene.cancel() } label: { Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity) }
+                                    .buttonStyle(CubePrimaryButton())
+                            } else if !scene.playback.isSolutionComplete {
+                                Button { scene.nextStep() } label: { Text("Show next move").frame(maxWidth: .infinity) }
+                                    .buttonStyle(CubePrimaryButton())
+                            } else {
+                                Text("All steps completed").frame(maxWidth: .infinity).font(.headline)
+                            }
+                        }
+                    }.cubeDrawer()
+                }.frame(maxWidth: 700).frame(maxWidth: .infinity)
             }
-            .padding(20).frame(maxWidth: 560).frame(maxWidth: .infinity)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 12) {
-                if !solution.moves.isEmpty { stepStrip }
-                HStack {
-                    Button("Previous step", systemImage: "backward.end.fill") { scene.previousStep() }
-                        .disabled(!scene.playback.canGoBack || scene.isAutoPlaying)
-                        .accessibilityIdentifier("previousStep")
-                    if scene.playback.isBusy || scene.isAutoPlaying {
-                        Button("Pause", systemImage: "pause.fill") { scene.cancel() }.buttonStyle(.borderedProminent)
-                    } else if scene.playback.isSolutionComplete {
-                        Label("Verified solved", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                    } else {
-                        Button("Next move") { scene.nextStep() }.buttonStyle(.bordered)
-                        Button("Play solution", systemImage: "play.fill") { scene.playSolution() }.buttonStyle(.borderedProminent)
-                    }
-                }
-            }.padding().frame(maxWidth: .infinity).background(Color(uiColor: .systemGroupedBackground))
+        .background(CubeStyle.stage.ignoresSafeArea()).foregroundStyle(.white)
+        .navigationTitle("Let’s solve it").navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(CubeStyle.stage, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Toggle("Slow motion", isOn: $scene.slow).disabled(scene.playback.isBusy)
+                    Button("Replay last move") { scene.replay() }.disabled(scene.playback.lastTurn == nil || scene.playback.isBusy)
+                    Button("Play all moves") { scene.playSolution() }.disabled(scene.playback.isBusy || scene.playback.nextMove == nil)
+                    Button("Restart solution") { scene.restartSolution() }
+                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Playback options")
+            }
         }
-        .navigationTitle("Manual solve").navigationBarTitleDisplayMode(.inline)
         .onAppear { if scene.playback.isSolutionComplete { onComplete() } }
         .onChange(of: scene.playback.isSolutionComplete) { _, complete in if complete { onComplete() } }
         .onChange(of: scenePhase) { _, phase in if phase != .active { scene.cancel() } }
@@ -95,10 +117,10 @@ struct ManualSolutionView: View {
                             VStack(spacing: 4) {
                                 Text("\(index + 1)").font(.caption)
                                 Text(solution.moves[index].notation).font(.body.monospaced().bold())
-                                Text(current ? "Current" : completed ? "Done" : "Later").font(.caption2)
+                                if completed && !current { Image(systemName: "checkmark").font(.caption2) }
                             }
                             .frame(minWidth: 56).padding(8)
-                            .background(current ? Color.accentColor : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                            .background(current ? CubeStyle.action : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
                             .foregroundStyle(current ? Color.white : Color.primary)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel("Step \(index + 1), \(solution.moves[index].notation), \(current ? "current" : completed ? "completed" : "upcoming")")

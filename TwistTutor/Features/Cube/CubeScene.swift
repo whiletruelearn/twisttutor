@@ -9,6 +9,8 @@ import AppWorkflow
 final class CubeScene {
     let playback: CubePlayback
     var selectedIndex: Int?
+    var allowsOrbit = true
+    var showsTurnGuide = true
     var entryColors: [CubeColorID?]?
     @ObservationIgnored var onPaint: ((Int) -> Void)?
     @ObservationIgnored private var focusedFace: CubeFaceID?
@@ -74,7 +76,7 @@ final class CubeScene {
 
     func attach(_ view: ARView) {
         self.view = view
-        view.environment.background = .color(.systemGroupedBackground)
+        view.environment.background = .color(CubeStyle.stageUIColor)
         view.renderOptions = [.disableMotionBlur, .disableDepthOfField, .disableCameraGrain]
         view.scene.addAnchor(anchor)
         anchor.addChild(cubeRoot)
@@ -98,6 +100,7 @@ final class CubeScene {
     }
 
     func orbit(x: Float, y: Float) {
+        guard allowsOrbit else { return }
         if let face = focusedFace {
             let axis = CubeRenderLayout.axis(for: face)
             yaw = atan2(axis.x, axis.z)
@@ -119,7 +122,7 @@ final class CubeScene {
     func updateCamera() {
         if let face = focusedFace {
             let location = CubeRenderLayout.facelets[face.rawValue * 9 + 4]
-            camera.look(at: .zero, from: location.normal * 7, upVector: -location.down, relativeTo: anchor)
+            camera.look(at: .zero, from: location.normal * 6.6 + location.right * 0.8 - location.down * 0.6, upVector: -location.down, relativeTo: anchor)
             return
         }
         let radius: Float = 8
@@ -135,6 +138,7 @@ final class CubeScene {
             onPaint(index)
             return
         }
+        guard entryColors == nil else { return }
         selectedIndex = index
         selectedFace = CubeFaceID(rawValue: index / 9)!
         rebuild(playback.cube)
@@ -220,11 +224,11 @@ final class CubeScene {
             for location in CubeRenderLayout.facelets where location.position == position {
                 let isHighlighted = highlightPiece && selectedPosition != nil
                     ? selectedPosition == position : location.index / 9 == selectedFace.rawValue
-                let backing = ModelEntity(mesh: .generateBox(width: 0.88, height: 0.88, depth: 0.015, cornerRadius: 0.055), materials: [UnlitMaterial(color: isHighlighted ? .white : .black)])
+                let backing = ModelEntity(mesh: .generateBox(width: 0.88, height: 0.88, depth: 0.015, cornerRadius: 0.055), materials: [UnlitMaterial(color: entryColors == nil && showsTurnGuide && isHighlighted ? .white : UIColor(white: 0.08, alpha: 1))])
                 backing.position = location.normal * 0.489
                 backing.orientation = simd_quatf(from: SIMD3<Float>(0,0,1), to: location.normal)
                 cubie.addChild(backing)
-                let sticker = ModelEntity(mesh: .generateBox(width: 0.79, height: 0.79, depth: 0.02, cornerRadius: 0.045), materials: [UnlitMaterial(color: entryColors.map { $0[location.index]?.uiColor ?? UIColor(white: 0.55, alpha: 1) } ?? state.stickers[location.index].colorID.uiColor)])
+                let sticker = ModelEntity(mesh: .generateBox(width: 0.79, height: 0.79, depth: 0.02, cornerRadius: 0.045), materials: [UnlitMaterial(color: entryColors.map { $0[location.index]?.uiColor ?? UIColor(white: 0.72, alpha: 1) } ?? state.stickers[location.index].colorID.uiColor)])
                 sticker.position = location.normal * 0.505
                 sticker.orientation = backing.orientation
                 sticker.name = "sticker-\(location.index)"
@@ -242,7 +246,7 @@ final class CubeScene {
                 }
             }
         }
-        if entryColors == nil { addDirectionArrow() }
+        if entryColors == nil && showsTurnGuide { addDirectionArrow() }
     }
 
     private func addDirectionArrow() {
@@ -308,7 +312,7 @@ struct CubeViewport: UIViewRepresentable {
     }
 
     func updateUIView(_ view: ARView, context: Context) {
-        view.environment.background = .color(.systemGroupedBackground)
+        view.environment.background = .color(CubeStyle.stageUIColor)
     }
 
     static func dismantleUIView(_ view: ARView, coordinator: Coordinator) { coordinator.scene.detach() }
