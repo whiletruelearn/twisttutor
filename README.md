@@ -1,6 +1,6 @@
 # TwistTutor: Cube Solver
 
-An offline iOS cube solver and beginner tutor, under development. ENG-595–598 establish the cube foundation; scanning, solving algorithms, 3D rendering and lessons are subsequent milestones. The app currently displays its starter welcome screen.
+An offline iOS cube solver and beginner tutor, under development. ENG-595–598 establish the cube foundation; ENG-599–601 add an offline two-phase solver and independently verified results. Scanning, 3D rendering and lessons are subsequent milestones. The app currently displays its starter welcome screen.
 
 - Display name: `TwistTutor: Cube Solver`
 - Bundle identifier: `com.serendipitylabs.twisttutor`
@@ -20,14 +20,14 @@ Open `TwistTutor.xcodeproj`, select a simulator and run the `TwistTutor` scheme.
 | `Packages/TwistTutorKit/Sources/CubeValidation` | Color checks, piece uniqueness and physical legality | Implemented; depends only on CubeCore |
 | `Packages/TwistTutorKit/Sources/AppWorkflow` | Main-actor observable session and cancellation | Implemented; depends on core and validation |
 | Vision / Features/Scan | AVFoundation capture and local image analysis | M5; adapter supplies a captured face, owns camera lifecycle |
-| Solver / Features/Solve | Offline solver plus independent solution verification | M2/M7; must validate input before solving |
+| `Packages/TwistTutorKit/Sources/CubeSolver` | Offline two-phase search, bundled tables and independent verification | Implemented; solution presentation is M7 |
 | Renderer / Features/CubeReview | RealityKit geometry and correction UI | M3/M6; consumes core state, never owns cube truth |
 | Teaching / Features/Learn / Features/Practice | Beginner plans, explanations and practice | M8/M9; separate from quick solver |
 | Persistence | Local preferences, learning progress and history | Later issue; no image storage introduced here |
 
 Future boundaries are documented contracts, not empty modules or placeholder implementations. Implementations must preserve the dependency direction toward CubeCore. Camera state does not belong in a cubie, and view state does not belong in a camera adapter.
 
-`AppSession` represents all specified phases from Idle to Completed. Accepted faces are ordered, duplicate completions are ignored, and validation gates cube readiness. Leaving/restarting cancels the owned task and invalidates its operation token. Even an adapter that ignores cancellation cannot overwrite a newer session. A failed capture returns to Scanning with retry feedback. Solve and Learn remain distinct modes. The solution-completion seam currently accepts a verification flag; the later solver integration must supply this only after independent replay verification (ENG-601). No solving behavior is implemented in M1.
+`AppSession` represents all specified phases from Idle to Completed. Accepted faces are ordered, duplicate completions are ignored, and validation gates cube readiness. Leaving/restarting cancels the owned task and invalidates its operation token. Even an adapter that ignores cancellation cannot overwrite a newer session. A failed capture returns to Scanning with retry feedback. Solve and Learn remain distinct modes. Solution calculation returns a `VerifiedSolution` bound to the exact initial cube. Its initializer is unavailable to callers: only independent facelet replay can create one. `AppSession.calculateSolution` exposes verified moves, handles retry/cancellation and rejects results from another scan. Solving uses a detached task and forwards cancellation into its bounded search. No solver work or table I/O runs on MainActor.
 
 ## Cube conventions
 
@@ -67,7 +67,7 @@ Every `CapturedFace` explicitly declares its logical face and the clockwise imag
 Run the portable XCTest suite without launching a simulator:
 
 ```sh
-swift test --package-path Packages/TwistTutorKit --enable-code-coverage
+TWISTTUTOR_SOLVER_CASES=1000 swift test -c release --package-path Packages/TwistTutorKit --enable-code-coverage
 ```
 
 Run the same test sources on iOS using Product → Test in the `TwistTutor` scheme, or choose an installed simulator:
@@ -78,8 +78,68 @@ xcodebuild -project TwistTutor.xcodeproj -scheme TwistTutor \
   CODE_SIGNING_ALLOWED=NO test
 ```
 
-If command-line tools point at a different Xcode, set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for the command. CI runs package tests and a simulator app build.
+If command-line tools point at a different Xcode, set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for the command. CI runs the release package suite (including 1,000 solve/replay cases), regenerates and compares the bundled tables, and builds the simulator app.
 
-The suite covers all 18 turns, fixed quarter-turn fixtures, move inverses, noncommuting moves, a known algorithm identity, 1,000 reproducible 30-turn scrambles, metadata-preserving conversions, capture rotations, invalid colors/centers, reflected/duplicate pieces, single flipped edges/twisted corners, permutation parity, correction revalidation and asynchronous cancellation races.
+The suite covers all 18 turns, fixed quarter-turn fixtures, move inverses, noncommuting moves, a known algorithm identity, 1,000 reproducible 30-turn scrambles, metadata-preserving conversions, capture rotations, invalid colors/centers, reflected/duplicate pieces, single flipped edges/twisted corners, permutation parity, correction revalidation asynchronous cancellation races, invalid solver output, resource corruption, concurrent solves, explicit search limits and stale solution results. Solver regression includes 1,000 seeded scrambles plus 50 directly sampled reachable cubie configurations, independent of scramble generation.
 
 Support assumptions: iOS 17+ on iPhone/iPad; macOS 14+ is a **test host**, not a shipping app target. Minimum-OS device validation and older-device camera/solver/renderer benchmarks remain outstanding. Simulator/core tests do not establish physical scanning accuracy or release performance.
+
+
+## Offline solver design and selection
+
+`QuickSolver` validates the cube, searches for at most 12 moves to orient the pieces and put the four middle-slice edges in their slice, then searches at most 18 moves using U/D turns and R2/F2/L2/B2. It accepts the first verified solution rather than searching for global optimality. Typical lengths are approximately 20–30 face turns. The approach follows the published [two-phase algorithm](https://kociemba.org/math/twophase.htm) and [pruning-table principles](https://kociemba.org/math/pruning.htm); the Swift implementation, coordinate encoding, generator and tables are original to this repository.
+
+Each search owns its mutable paths and counters; immutable tables are loaded once from the local SwiftPM resource bundle. The default bound is 50 million visited nodes or 10 seconds, checked with cooperative cancellation every 1,024 nodes. Limits are a safety bound, not the product's two-second latency target. Failure returns an error and never a partial solution. Solved input returns an empty verified sequence without loading tables. The final replay uses the existing facelet engine, independently of solver coordinates. Tests reject deliberately wrong output before it reaches guidance.
+
+### Dependency/license decision (14 October 2026)
+
+| Option / reviewed revision | License evidence | Decision |
+| --- | --- | --- |
+| Original Swift implementation / table format `TT2PH001` | No third-party implementation or table data copied; project source is governed by this repository's own distribution policy | Selected: native integration, explicit cancellation, small bundled tables, existing core conventions |
+| cubejs / `6b3da493894d9aed54f4c8aafccadbe676e745b5` | [Full MIT license and copyright notice](https://github.com/ldez/cubejs/blob/6b3da493894d9aed54f4c8aafccadbe676e745b5/LICENSE); permits commercial use with notice retention | Not integrated: would require a JavaScript runtime bridge or a separately maintained port |
+| RubiksCube-TwophaseSolver / `0c1ea6233cb2d4f294bc97077b60265ba76f3616` | [Full GPL-3.0 license](https://github.com/hkociemba/RubiksCube-TwophaseSolver/blob/0c1ea6233cb2d4f294bc97077b60265ba76f3616/LICENSE) | Not integrated: Python runtime/port plus GPL distribution obligations |
+| min2phase / `4d183b9eff8119cac72bc50ef35a7d8990740e06` | [GPL notice in source header](https://github.com/cs0x7f/min2phase/blob/4d183b9eff8119cac72bc50ef35a7d8990740e06/src/Search.java) | Not integrated: Java runtime/port plus GPL distribution obligations |
+
+These alternatives are not shipped, so their code, data and notices are not dependencies of the app. GPL is not a prohibition on commercial use; it was not selected as the licensing model for an embedded dependency. This decision does not add an open-source license to the app.
+
+### Bundled data and regeneration
+
+`CubeSolver/Resources/TwoPhaseTables.bin` contains six UInt16 transition tables and four UInt8 pairwise distance tables. Payload size including header/checksum is **5,815,285 bytes** (about 5.55 MiB). Its format has a magic/version, fixed dimensions, little-endian integers and SHA-256 checksum; the loader rejects wrong sizes, versions, checksums, transition ranges or distance bounds. Resources never come from the network or the user's filesystem.
+
+SHA-256 of the complete version-one file:
+
+```text
+a44255f8ac90537c76c06893fb8c9d59594239b0abd2074ecb7d0590454b3a4b
+```
+
+Regenerate independently and compare before updating a table-format version:
+
+```sh
+swift run -c release --package-path Packages/TwistTutorKit SolverTools generate /tmp/TwoPhaseTables.bin
+cmp Packages/TwistTutorKit/Sources/CubeSolver/Resources/TwoPhaseTables.bin /tmp/TwoPhaseTables.bin
+```
+
+Generation took approximately 0.32 seconds on the development Mac; it is a development/CI operation, never a first-launch requirement. The resource bundle is copied into the iOS build, so the first solve needs no downloads or generated cache. Table changes require a new format version if their coordinate meanings or layout change.
+
+### Measured performance and limits
+
+Fresh-process release benchmark on Apple M4 / macOS 15.6.1, 1,000 deterministic 30-turn scrambles (a simulator build was also running on the host):
+
+| Measure | Result |
+| --- | ---: |
+| First solve, including table load | 39.13 ms |
+| Warm median / p95 / maximum | 2.54 / 15.22 / 124.00 ms |
+| Solution length, min / mean / max | 11 / 22.99 / 26 moves |
+| Peak resident process memory | 16,924,672 bytes |
+
+Fresh-process iPhone 16e **Simulator**, iOS 26.0 on the same Mac, Release XCTest with coverage enabled, 100 scrambles: first solve **16.78 ms**, warm median/p95/maximum **3.88/44.86/72.22 ms**, mean **23.03** moves (max 26). Peak resident memory **152,371,200 bytes** includes the simulator XCTest runner; it is not solver-only or physical-device memory.
+
+Reproduce a cold host benchmark in a new process:
+
+```sh
+swift run -c release --package-path Packages/TwistTutorKit SolverTools benchmark 1000
+```
+
+For a cold simulator benchmark, run only `TwistTutorTests/SolverBenchmarkTests` in a fresh Release test process with `ENABLE_TESTABILITY=YES` and `ONLY_ACTIVE_ARCH=YES`. Running the benchmark after other tests is a warm-table measurement.
+
+No physical iPhone was available during this slice. The approximately two-second target is comfortably met on the measured host/simulator; it remains **unverified on supported physical iPhones**, especially the oldest supported devices. The current user-facing screen is still the welcome screen; manual input and animated guidance will make this engine device-testable in later milestones.

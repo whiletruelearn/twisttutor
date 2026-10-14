@@ -1,5 +1,6 @@
 import CubeCore
 import CubeValidation
+import CubeSolver
 import Foundation
 import Observation
 
@@ -35,6 +36,7 @@ public final class AppSession {
     public private(set) var cube: CubeState?
     public private(set) var validation: ValidationReport?
     public private(set) var errorMessage: String?
+    public private(set) var solution: VerifiedSolution?
     @ObservationIgnored private var activeOperation: OperationToken?
     @ObservationIgnored private var pendingTask: Task<Void, Never>?
     @ObservationIgnored private var pendingTaskToken: OperationToken?
@@ -48,14 +50,14 @@ public final class AppSession {
     public func start(_ mode: ExperienceMode) {
         cancelPendingWork()
         self.mode = mode
-        captures = []; cube = nil; validation = nil; errorMessage = nil
+        captures = []; cube = nil; validation = nil; errorMessage = nil; solution = nil
         phase = .scanning
     }
 
     /// Leaving a flow invalidates all outstanding results, including uncooperative adapters.
     public func leave() {
         cancelPendingWork()
-        captures = []; cube = nil; validation = nil; errorMessage = nil
+        captures = []; cube = nil; validation = nil; errorMessage = nil; solution = nil
         phase = .idle
     }
 
@@ -135,6 +137,7 @@ public final class AppSession {
         guard phase == .requiresCorrection || phase == .cubeReady else { throw WorkflowError.unexpectedPhase(phase) }
         guard let cube else { throw WorkflowError.cubeNotReady }
         self.cube = try cube.replacingColor(at: index, with: color)
+        solution = nil
         phase = .validatingCube
         try validateCurrentCube()
     }
@@ -143,19 +146,59 @@ public final class AppSession {
         guard phase == .cubeReady else { throw WorkflowError.unexpectedPhase(phase) }
         guard mode == .solve else { throw WorkflowError.wrongExperienceMode }
         let token = newOperation()
+        solution = nil
+        errorMessage = nil
         phase = .calculatingSolution
         return token
     }
 
-    /// The caller must pass the independent verification gate before beginning guidance.
-    /// No solution implementation is introduced in M1.
+    /// The verifier binds the moves to an immutable snapshot, not just a success flag.
     @discardableResult
-    public func finishSolutionCalculation(token: OperationToken, verified: Bool) -> Bool {
+    public func finishSolutionCalculation(token: OperationToken, solution: VerifiedSolution) throws -> Bool {
         guard activeOperation == token, phase == .calculatingSolution else { return false }
+        guard solution.initialCube == cube else { throw SolverError.resultForDifferentCube }
         activeOperation = nil
-        phase = verified ? .solving : .cubeReady
-        errorMessage = verified ? nil : "We couldn't verify this solution. Please try again."
+        self.solution = solution
+        phase = .solving
+        errorMessage = nil
         return true
+    }
+
+    public func failSolutionCalculation(token: OperationToken) {
+        guard activeOperation == token, phase == .calculatingSolution else { return }
+        activeOperation = nil
+        solution = nil
+        phase = .cubeReady
+        errorMessage = "We couldn't find a verified solution. Please try again."
+    }
+
+    public func cancelSolutionCalculation() {
+        guard phase == .calculatingSolution else { return }
+        cancelPendingWork()
+        solution = nil
+        errorMessage = nil
+        phase = .cubeReady
+    }
+
+    @discardableResult
+    public func calculateSolution(using solver: any CubeSolving = QuickSolver()) throws -> Task<Void, Never> {
+        guard let cube else { throw WorkflowError.cubeNotReady }
+        let token = try beginSolutionCalculation()
+        pendingTaskToken = token
+        let task = Task { [weak self] in
+            do {
+                let result = try await solver.solve(cube)
+                try Task.checkCancellation()
+                _ = try self?.finishSolutionCalculation(token: token, solution: result)
+            } catch {
+                self?.failSolutionCalculation(token: token)
+            }
+            guard let self, self.pendingTaskToken == token else { return }
+            self.pendingTask = nil
+            self.pendingTaskToken = nil
+        }
+        pendingTask = task
+        return task
     }
 
     public func beginTeaching() throws {
