@@ -11,8 +11,8 @@ struct ContentView: View {
                 ScrollView {
                     VStack(spacing: 20) {
                         VStack(spacing: 4) {
-                            Text("Explore your cube").font(.title2.bold())
-                            Text("Drag to look around. Tap a sticker to inspect.")
+                            Text("Let’s solve your cube").font(.title2.bold())
+                            Text("Match the colors on your cube, then follow each move in 3D.")
                                 .font(.subheadline).foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                         }
@@ -24,23 +24,19 @@ struct ContentView: View {
                                         .font(.subheadline)
                                 }.buttonStyle(.bordered).padding(8)
                             }
-                        NavigationLink { ScanView() } label: {
-                            Label("Scan your cube", systemImage: "camera")
-                        }.buttonStyle(.borderedProminent)
                         NavigationLink { ManualEntryView() } label: {
-                            Label("Enter cube manually", systemImage: "square.grid.3x3")
-                        }.buttonStyle(.bordered)
-                        controls
+                            Label("Enter my cube", systemImage: "cube")
+                                .font(.headline).frame(maxWidth: .infinity, minHeight: 44)
+                        }.buttonStyle(.borderedProminent)
+                        DisclosureGroup("Explore moves") {
+                            controls
+                            turnControls
+                        }
                     }
                     .padding(.horizontal, 20).padding(.vertical, 16)
                     .frame(maxWidth: 620).frame(maxWidth: .infinity)
                 }
                 .background(Color(uiColor: .systemGroupedBackground))
-            }
-            .safeAreaInset(edge: .bottom) {
-                turnControls.padding(.horizontal, 20).padding(.vertical, 10)
-                    .frame(maxWidth: 620).frame(maxWidth: .infinity)
-                    .background(Color(uiColor: .systemGroupedBackground))
             }
             .navigationTitle("TwistTutor")
             .navigationBarTitleDisplayMode(.inline)

@@ -9,6 +9,23 @@ import AppWorkflow
 final class CubeScene {
     let playback: CubePlayback
     var selectedIndex: Int?
+    var entryColors: [CubeColorID?]?
+    @ObservationIgnored var onPaint: ((Int) -> Void)?
+    @ObservationIgnored private var focusedFace: CubeFaceID?
+
+    func showEntry(_ colors: [CubeColorID?]) {
+        guard colors.count == 54 else { return }
+        entryColors = colors
+        rebuild(playback.cube)
+    }
+
+    func focus(on face: CubeFaceID) {
+        selectedFace = face
+        focusedFace = face
+        updateCamera()
+        rebuild(playback.cube)
+    }
+
     var selectedFace: CubeFaceID = .front
     var highlightPiece = false
     private(set) var isAutoPlaying = false
@@ -81,18 +98,30 @@ final class CubeScene {
     }
 
     func orbit(x: Float, y: Float) {
+        if let face = focusedFace {
+            let axis = CubeRenderLayout.axis(for: face)
+            yaw = atan2(axis.x, axis.z)
+            pitch = asin(axis.y * 0.98)
+            focusedFace = nil
+        }
         yaw -= x * 0.008
         pitch = min(1.45, max(-1.45, pitch + y * 0.008))
         updateCamera()
     }
 
     func resetView() {
+        focusedFace = nil
         yaw = .pi / 4; pitch = .pi / 6
         updateCamera()
         viewRevision += 1
     }
 
-    private func updateCamera() {
+    func updateCamera() {
+        if let face = focusedFace {
+            let location = CubeRenderLayout.facelets[face.rawValue * 9 + 4]
+            camera.look(at: .zero, from: location.normal * 7, upVector: -location.down, relativeTo: anchor)
+            return
+        }
         let radius: Float = 8
         camera.look(at: .zero, from: [radius * cos(pitch) * sin(yaw), radius * sin(pitch), radius * cos(pitch) * cos(yaw)], relativeTo: anchor)
     }
@@ -100,6 +129,12 @@ final class CubeScene {
     func select(at point: CGPoint) {
         guard !playback.isBusy, let entity = view?.entity(at: point),
               entity.name.hasPrefix("sticker-"), let index = Int(entity.name.dropFirst(8)) else { return }
+        if let onPaint {
+            // Guided entry paints only the named face, even after orbiting.
+            guard index / 9 == selectedFace.rawValue else { return }
+            onPaint(index)
+            return
+        }
         selectedIndex = index
         selectedFace = CubeFaceID(rawValue: index / 9)!
         rebuild(playback.cube)
@@ -189,7 +224,7 @@ final class CubeScene {
                 backing.position = location.normal * 0.489
                 backing.orientation = simd_quatf(from: SIMD3<Float>(0,0,1), to: location.normal)
                 cubie.addChild(backing)
-                let sticker = ModelEntity(mesh: .generateBox(width: 0.79, height: 0.79, depth: 0.02, cornerRadius: 0.045), materials: [UnlitMaterial(color: state.stickers[location.index].colorID.uiColor)])
+                let sticker = ModelEntity(mesh: .generateBox(width: 0.79, height: 0.79, depth: 0.02, cornerRadius: 0.045), materials: [UnlitMaterial(color: entryColors.map { $0[location.index]?.uiColor ?? UIColor(white: 0.55, alpha: 1) } ?? state.stickers[location.index].colorID.uiColor)])
                 sticker.position = location.normal * 0.505
                 sticker.orientation = backing.orientation
                 sticker.name = "sticker-\(location.index)"
@@ -207,7 +242,7 @@ final class CubeScene {
                 }
             }
         }
-        addDirectionArrow()
+        if entryColors == nil { addDirectionArrow() }
     }
 
     private func addDirectionArrow() {
@@ -241,11 +276,20 @@ final class CubeScene {
     }
 }
 
+private final class CubeRenderView: ARView {
+    var onLayout: (() -> Void)?
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if bounds.width > 0 && bounds.height > 0 { onLayout?() }
+    }
+}
+
 struct CubeViewport: UIViewRepresentable {
     let scene: CubeScene
 
     func makeUIView(context: Context) -> ARView {
-        let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
+        let view = CubeRenderView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
+        view.onLayout = { [weak scene = scene] in scene?.updateCamera() }
         scene.attach(view)
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
         view.addGestureRecognizer(pan)
