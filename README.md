@@ -1,12 +1,12 @@
 # TwistTutor: Cube Solver
 
-An offline iOS cube solver and beginner tutor, under development. ENG-595–598 establish the cube foundation; ENG-599–601 add an offline two-phase solver and independently verified results. ENG-602–603 add an interactive RealityKit cube with animated turns. ENG-604 adds manual color entry with validation, verified solving and solution playback. The app opens the cube explorer; **Enter cube manually** opens the camera-independent test flow. Scanning, full instructional solving and lessons are subsequent milestones.
+An offline iOS cube solver and beginner tutor, under development. ENG-595–598 establish the cube foundation; ENG-599–601 add an offline two-phase solver and independently verified results. ENG-602–603 add an interactive RealityKit cube with animated turns. ENG-604 adds manual color entry with validation, verified solving and solution playback. The app opens the cube explorer; **Enter cube manually** opens the camera-independent test flow. ENG-605–607 add guided six-face camera capture and quality-gated raw samples. Color classification, scan-to-solve, full instructional solving and lessons remain subsequent milestones.
 
 - Display name: `TwistTutor: Cube Solver`
 - Bundle identifier: `com.serendipitylabs.twisttutor`
 - Deployment target: iOS 17.0; iPhone and iPad
 - Development: Xcode 16 or later with Swift 6; current local verification uses Xcode 26
-- No external package dependencies, accounts, networking or camera permissions in this foundation
+- No external package dependencies, accounts or networking. Camera permission is requested only when opening the scanner.
 
 Open `TwistTutor.xcodeproj`, select a simulator and run the `TwistTutor` scheme. For physical devices, select your Apple development team in Signing & Capabilities. App icons and release configuration are tracked separately.
 
@@ -15,12 +15,12 @@ Open `TwistTutor.xcodeproj`, select a simulator and run the `TwistTutor` scheme.
 | Boundary | Responsibility | Status |
 | --- | --- | --- |
 | `TwistTutor/App` | SwiftUI app composition and session ownership | Implemented |
-| `TwistTutor/Features/Home` | Cube explorer and entry point to manual solving | Implemented |
+| `TwistTutor/Features/Home` | Cube explorer and entry points to manual solving and scanning | Implemented |
 | `TwistTutor/Features/ManualEntry` | 54-sticker entry, validation and verified solution playback | M4 integration harness implemented |
 | `Packages/TwistTutorKit/Sources/CubeCore` | Models, notation, integer geometry, turns, conversion, capture orientation | Implemented; independent of UI and camera |
 | `Packages/TwistTutorKit/Sources/CubeValidation` | Color checks, piece uniqueness and physical legality | Implemented; depends only on CubeCore |
-| `Packages/TwistTutorKit/Sources/AppWorkflow` | Main-actor observable session and cancellation | Implemented; depends on core and validation |
-| Vision / Features/Scan | AVFoundation capture and local image analysis | M5; adapter supplies a captured face, owns camera lifecycle |
+| `Packages/TwistTutorKit/Sources/AppWorkflow` | Main-actor session, scan sampling/quality and cancellation | Implemented; core, validation and solver dependencies |
+| `TwistTutor/Features/Scan` and AppWorkflow scan types | AVFoundation lifecycle, Vision/Core Image sampling, quality gates and six-face workflow | M5 capture implemented; physical-device validation and ENG-608 classification pending |
 | `Packages/TwistTutorKit/Sources/CubeSolver` | Offline two-phase search, bundled tables and independent verification | Implemented; solution presentation is M7 |
 | `TwistTutor/Features/Cube` | Non-AR RealityKit cubies, orbit, hit testing, highlights and slice animation | M3 implemented; correction UI remains M6 |
 | Teaching / Features/Learn / Features/Practice | Beginner plans, explanations and practice | M8/M9; separate from quick solver |
@@ -186,3 +186,48 @@ Validation: **55 package tests and 55 native iPhone simulator tests passed**. Ne
 Native simulator checks exercised painting a sticker, invalid-count rejection and correction, the zero-move path, and a 19-move mixed-cube solve to the visibly solved endpoint. A navigation-time blank viewport found during testing was fixed by maintaining camera pose during RealityKit scene updates.
 
 Screenshots: [manual editor](Docs/ManualEntry/entry.png) · [verified solution ready to play](Docs/ManualEntry/solution.png).
+
+## Guided camera capture (ENG-605–607)
+
+Open **Scan your cube** from Home. Hold the device in portrait and show one complete face. Once the detected face passes the quality checks and remains stable for 0.85 seconds, it is captured automatically. Follow the rotation diagram, then tap **I’m ready** for each next face. The order is Front → Right → Back → Left → Top → Bottom. After six captures, review the sampled nine-color grids or retake from any face (which discards that face and all later captures).
+
+This slice ends at raw sampled colors. It does **not** classify the 54 colors, reconstruct a validated cube or solve a camera scan; those belong to ENG-608 and the review/correction slice. Manual entry remains available for verified solving.
+
+### Orientation and camera lifecycle
+
+Keep the original top upward through the four side faces. Before each top/bottom capture, return to the original front. Tip the top toward the camera with the original **back edge at the image top**, or tip the bottom toward the camera with the original **front edge at the image top**. These exact holds produce canonical outside-view row order, so both top and bottom use an identity sample mapping. Tests verify these rotations against `CubeRenderLayout`; arbitrary photo orientations are not supported here.
+
+The rear camera supplies upright, unmirrored portrait frames. Session setup, throttled analysis (at most roughly 8 frames/second) and shutdown run on a serial background queue; late video frames are discarded. Generation tokens reject results from before a retake, pause or navigation. Capture pauses between faces and requires orientation confirmation before any retake. Backgrounding, landscape layout, cancelling and session interruptions invalidate stability; resuming after a background/permission interruption is explicit. Permission denial provides a Settings link, and unavailable cameras retain the manual-entry alternative. Images are neither saved nor uploaded; only six sets of RGB samples and geometric/quality metadata remain in memory until leaving the screen.
+
+### Detector and quality gates
+
+`FaceImageAnalyzer` uses Vision rectangle observations, Core Image perspective correction, and median sRGB samples from the inner 40% of each cell in a 180×180 normalized face. Samples retain normalized original-image coordinates through a projective mapping. All four internal seams need image support across all three cells, preventing a plain rectangle or surrounding background rectangle from masquerading as a 3×3 grid. Samples are provisional measurements, never cube-color assignments.
+
+`ScanCapture` checks completeness, image edges, area, side-length ratio, sharpness, underexposure, clipping, cell variation, and temporal geometry/color stability. CIELAB center distance distinguishes a confident repeated center from an ambiguous near-match; both block automatic advancement and explain how to recover. Balanced sticker counts and physical cube validity are intentionally not inferred here. `ScanThresholds` holds the initial tunable thresholds; they are not calibrated accuracy claims.
+
+### Verification and device test checklist
+
+Synthetic stickered and stickerless fixtures exercise the actual Vision/Core Image path, perspective correction, source-coordinate mapping, row order, blur/exposure measurement and plain-rectangle rejection. Workflow tests exercise all six faces, quality rejections, duplicate/ambiguous centers, interrupted stability, late frames, and retakes. Synthetic fixtures do not establish real-world recognition accuracy.
+
+Physical-device validation is **pending**: no connected iPhone was available during implementation. Before treating this scanner as release-ready:
+
+- Scan real stickered and stickerless cubes in daylight and warm indoor light; inspect every sampled cell, especially Top and Bottom.
+- Try blur, partial faces, glare, low light, fingers covering cells and red/orange centers. Confirm bad frames never advance and stable good faces do.
+- Deny permission, enable it in Settings, background during capture, rotate the device, interrupt the camera, retake and cancel. Confirm no duplicate or stale advancement.
+- Measure capture latency and preview responsiveness on the oldest supported iPhone. Tune thresholds against a retained, consented test corpus of real cube images.
+
+The simulator can verify navigation and the unavailable-camera path, but cannot validate physical camera capture.
+
+Local verification: 70 host tests and 70 native iPhone simulator tests passed. Simulator and unsigned iPhone device builds succeeded. Simulator UI checks covered denial guidance, cancellation and navigation into manual entry. [Permission-denied screen](Docs/Scanner/permission-denied.png). Real camera capture and threshold calibration remain pending.
+
+### Physical-test correction: rounded stickerless faces
+
+The first physical test exposed a rectangle-only detection failure: Vision could select a single rounded sticker, which produced misleading “move closer” guidance. Detection now falls back to a measured grid near the alignment guide. Every inner and outer boundary needs edge support in all three cells; an isolated sticker or missing corner cannot supply a complete face. The guide limits the search and is not treated as evidence. Existing perspective correction and quality/stability gates remain in place. Debug builds print rate-limited `[CubeScan]` numeric quality/timing diagnostics without storing frames.
+
+Regression tests include rounded faces without an outer frame, modest rotation, incomplete grids, isolated stickers and exposure changes during stable capture. The supplied screenshot was replayed locally with correct nine-sample ordering and passing quality gates; it includes the drawn guide, so it is not evidence of successful unannotated live capture. Physical camera retesting remains required. A separate transient zero-width preview calculation was clamped to avoid invalid frame sizes during navigation.
+
+### Solution step navigation
+
+Manual solve now includes **Previous step** beside playback controls. It animates the inverse of the most recently completed move; the counter changes only when that animation finishes. Cancelling restores the committed endpoint. You can go backward from the solved state, return to the initial cube, and continue forward again. Replay remains a demonstration of the last completed forward step without advancing progress.
+
+A numbered, horizontally scrolling strip stays above the bottom controls, highlights the current step, and follows forward, backward and replay playback. The caption distinguishes Next, Playing, Undoing and Replaying; completed steps are marked Done. All 71 package tests pass and the simulator app builds. Device/UI verification of these new controls is pending.

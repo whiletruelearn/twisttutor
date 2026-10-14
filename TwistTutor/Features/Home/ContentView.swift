@@ -24,6 +24,9 @@ struct ContentView: View {
                                         .font(.subheadline)
                                 }.buttonStyle(.bordered).padding(8)
                             }
+                        NavigationLink { ScanView() } label: {
+                            Label("Scan your cube", systemImage: "camera")
+                        }.buttonStyle(.borderedProminent)
                         NavigationLink { ManualEntryView() } label: {
                             Label("Enter cube manually", systemImage: "square.grid.3x3")
                         }.buttonStyle(.bordered)
