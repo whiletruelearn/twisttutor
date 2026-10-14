@@ -68,8 +68,8 @@ struct ScanView: View {
                                 .frame(height: 160).accessibilityHidden(true)
                         } else {
                             CameraPreview(session: model.camera.session)
-                                .frame(width: min(geometry.size.width - 40, 202.5),
-                                       height: min(geometry.size.width - 40, 202.5) * 16 / 9)
+                                .frame(width: min(max(1, geometry.size.width - 40), 202.5),
+                                       height: min(max(1, geometry.size.width - 40), 202.5) * 16 / 9)
                                 .overlay { alignmentGrid }
                                 .clipShape(RoundedRectangle(cornerRadius: 18))
                                 .accessibilityLabel("Camera preview. Align one whole cube face with the grid.")

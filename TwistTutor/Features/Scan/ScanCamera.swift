@@ -27,6 +27,9 @@ final class ScanCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
     private var requested = false
     private var configured = false
     private var lastAnalysis = -Double.infinity
+    #if DEBUG
+    private var lastDiagnostic = -Double.infinity
+    #endif
     private var observers: [NSObjectProtocol] = []
 
     override init() {
@@ -110,7 +113,23 @@ final class ScanCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
         let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
         guard time - lastAnalysis >= 0.12 else { return }
         lastAnalysis = time
+        #if DEBUG
+        let started = CFAbsoluteTimeGetCurrent()
+        #endif
         let result = try? analyzer.analyze(CIImage(cvPixelBuffer: pixelBuffer))
+        #if DEBUG
+        if time - lastDiagnostic >= 2 {
+            lastDiagnostic = time
+            let milliseconds = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+            if let result {
+                print(String(format: "[CubeScan] analysis=%dms area=%.3f grid=%.3f sharpness=%.5f dark=%.3f glare=%.3f spread=%.3f",
+                             milliseconds, result.quad.area, result.gridEvidence, result.sharpness,
+                             result.darkFraction, result.clippedFraction, result.samples.map(\.spread).max() ?? 0))
+            } else {
+                print("[CubeScan] analysis=\(milliseconds)ms; no complete face detected")
+            }
+        }
+        #endif
         onFrame?(result, time, token)
     }
 }

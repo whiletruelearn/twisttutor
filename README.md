@@ -218,4 +218,10 @@ Physical-device validation is **pending**: no connected iPhone was available dur
 
 The simulator can verify navigation and the unavailable-camera path, but cannot validate physical camera capture.
 
-Local verification: 67 host tests and 67 native iPhone simulator tests passed. Simulator and unsigned iPhone device builds succeeded. Simulator UI checks covered denial guidance, cancellation and navigation into manual entry. [Permission-denied screen](Docs/Scanner/permission-denied.png). Real camera capture and threshold calibration remain pending.
+Local verification: 70 host tests and 70 native iPhone simulator tests passed. Simulator and unsigned iPhone device builds succeeded. Simulator UI checks covered denial guidance, cancellation and navigation into manual entry. [Permission-denied screen](Docs/Scanner/permission-denied.png). Real camera capture and threshold calibration remain pending.
+
+### Physical-test correction: rounded stickerless faces
+
+The first physical test exposed a rectangle-only detection failure: Vision could select a single rounded sticker, which produced misleading “move closer” guidance. Detection now falls back to a measured grid near the alignment guide. Every inner and outer boundary needs edge support in all three cells; an isolated sticker or missing corner cannot supply a complete face. The guide limits the search and is not treated as evidence. Existing perspective correction and quality/stability gates remain in place. Debug builds print rate-limited `[CubeScan]` numeric quality/timing diagnostics without storing frames.
+
+Regression tests include rounded faces without an outer frame, modest rotation, incomplete grids, isolated stickers and exposure changes during stable capture. The supplied screenshot was replayed locally with correct nine-sample ordering and passing quality gates; it includes the drawn guide, so it is not evidence of successful unannotated live capture. Physical camera retesting remains required. A separate transient zero-width preview calculation was clamped to avoid invalid frame sizes during navigation.

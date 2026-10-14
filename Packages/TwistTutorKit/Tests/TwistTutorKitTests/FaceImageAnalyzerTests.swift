@@ -26,6 +26,50 @@ final class FaceImageAnalyzerTests: XCTestCase {
                          provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
         return CIImage(cgImage: cg)
     }
+    func roundedFixture(missing: Set<Int> = [], roll: Double = 0) -> CIImage {
+        // Rounded colored cubies with background between them and no outer frame.
+        let size = CGSize(width: 400, height: 710)
+        let canvas = CGContext(data: nil, width: 400, height: 710, bitsPerComponent: 8, bytesPerRow: 1600,
+                               space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        canvas.setFillColor(CGColor(red: 0.28, green: 0.25, blue: 0.23, alpha: 1))
+        canvas.fill(CGRect(origin: .zero, size: size))
+        canvas.translateBy(x: 200, y: 355); canvas.rotate(by: roll * .pi / 180); canvas.translateBy(x: -200, y: -355)
+        for row in 0..<3 {
+            for col in 0..<3 {
+                guard !missing.contains(row * 3 + col) else { continue }
+                let c = colors[row * 3 + col]
+                canvas.setFillColor(CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: [CGFloat(c[0]) / 255, CGFloat(c[1]) / 255, CGFloat(c[2]) / 255, 1])!)
+                let rect = CGRect(x: 48 + col * 100, y: 202 + (2 - row) * 100, width: 96, height: 96)
+                canvas.addPath(CGPath(roundedRect: rect, cornerWidth: 16, cornerHeight: 16, transform: nil)); canvas.fillPath()
+            }
+        }
+        return CIImage(cgImage: canvas.makeImage()!)
+    }
+    @MainActor func testRoundedStickerlessFaceWithoutOuterBorder() throws {
+        for roll in [0.0, 7.0, -7.0] {
+            let result = try XCTUnwrap(FaceImageAnalyzer().analyze(roundedFixture(roll: roll)))
+            XCTAssertGreaterThan(result.quad.area, 0.25)
+            XCTAssertNil(ScanCapture().rejection(for: result))
+            for i in 0..<9 { XCTAssertEqual(result.samples[i].rgb.red, Double(colors[i][0]) / 255, accuracy: 0.04) }
+        }
+    }
+    @MainActor func testPartialGridAndIsolatedStickerCannotBeCaptured() throws {
+        for missing: Set<Int> in [[0], [0, 1, 2], [0, 1, 2, 3, 5, 6, 7, 8]] {
+            if let result = try FaceImageAnalyzer().analyze(roundedFixture(missing: missing)) {
+                XCTAssertNotNil(ScanCapture().rejection(for: result))
+            }
+        }
+    }
+    @MainActor func testRoundedGridRemainsStableAcrossSmallExposureChanges() throws {
+        let capture = ScanCapture(), analyzer = FaceImageAnalyzer()
+        let token = capture.generation
+        for frame in 0...8 {
+            let image = roundedFixture().applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: Double(frame % 3 - 1) * 0.03])
+            let measurement = try XCTUnwrap(analyzer.analyze(image))
+            capture.receive(measurement, at: Double(frame) * 0.15, generation: token)
+        }
+        XCTAssertEqual(capture.faces.count, 1)
+    }
     func testVisionDetectsStickeredAndStickerlessFixturesWithCorrectRowOrder() throws {
         for gap in [5, 1] {
             let result = try XCTUnwrap(FaceImageAnalyzer().analyze(fixture(gap: gap)))
