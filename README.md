@@ -1,6 +1,6 @@
 # TwistTutor: Cube Solver
 
-An offline iOS cube solver and beginner tutor, under development. ENG-595–598 establish the cube foundation; ENG-599–601 add an offline two-phase solver and independently verified results. Scanning, 3D rendering and lessons are subsequent milestones. The app currently displays its starter welcome screen.
+An offline iOS cube solver and beginner tutor, under development. ENG-595–598 establish the cube foundation; ENG-599–601 add an offline two-phase solver and independently verified results. ENG-602–603 add an interactive RealityKit cube with animated turns. The app now opens the cube explorer; manual input, scanning, guided solving and lessons are subsequent milestones.
 
 - Display name: `TwistTutor: Cube Solver`
 - Bundle identifier: `com.serendipitylabs.twisttutor`
@@ -15,13 +15,13 @@ Open `TwistTutor.xcodeproj`, select a simulator and run the `TwistTutor` scheme.
 | Boundary | Responsibility | Status |
 | --- | --- | --- |
 | `TwistTutor/App` | SwiftUI app composition and session ownership | Implemented |
-| `TwistTutor/Features/Home` | Starter screen; future feature views consume state/services | Starter only |
+| `TwistTutor/Features/Home` | Cube explorer with examples, face selection and playback controls | Implemented |
 | `Packages/TwistTutorKit/Sources/CubeCore` | Models, notation, integer geometry, turns, conversion, capture orientation | Implemented; independent of UI and camera |
 | `Packages/TwistTutorKit/Sources/CubeValidation` | Color checks, piece uniqueness and physical legality | Implemented; depends only on CubeCore |
 | `Packages/TwistTutorKit/Sources/AppWorkflow` | Main-actor observable session and cancellation | Implemented; depends on core and validation |
 | Vision / Features/Scan | AVFoundation capture and local image analysis | M5; adapter supplies a captured face, owns camera lifecycle |
 | `Packages/TwistTutorKit/Sources/CubeSolver` | Offline two-phase search, bundled tables and independent verification | Implemented; solution presentation is M7 |
-| Renderer / Features/CubeReview | RealityKit geometry and correction UI | M3/M6; consumes core state, never owns cube truth |
+| `TwistTutor/Features/Cube` | Non-AR RealityKit cubies, orbit, hit testing, highlights and slice animation | M3 implemented; correction UI remains M6 |
 | Teaching / Features/Learn / Features/Practice | Beginner plans, explanations and practice | M8/M9; separate from quick solver |
 | Persistence | Local preferences, learning progress and history | Later issue; no image storage introduced here |
 
@@ -142,4 +142,25 @@ swift run -c release --package-path Packages/TwistTutorKit SolverTools benchmark
 
 For a cold simulator benchmark, run only `TwistTutorTests/SolverBenchmarkTests` in a fresh Release test process with `ENABLE_TESTABILITY=YES` and `ONLY_ACTIVE_ARCH=YES`. Running the benchmark after other tests is a warm-table measurement.
 
-No physical iPhone was available during this slice. The approximately two-second target is comfortably met on the measured host/simulator; it remains **unverified on supported physical iPhones**, especially the oldest supported devices. The current user-facing screen is still the welcome screen; manual input and animated guidance will make this engine device-testable in later milestones.
+No physical iPhone was available during this slice. The approximately two-second target is comfortably met on the measured host/simulator; it remains **unverified on supported physical iPhones**, especially the oldest supported devices. The solver is not yet connected to the user-facing explorer; manual input and guided solving will expose it in later milestones.
+
+
+## Interactive cube (ENG-602–603)
+
+The explorer is a working renderer demonstration, with solved and deterministic mixed examples. It does not yet capture or solve a physical cube.
+
+On an iPhone or iPad:
+
+1. Drag the cube to orbit it; **Reset view** restores the front/right/up instructional angle. Camera movement never changes notation or logical state. VoiceOver users can use the cube’s Rotate view left/right/up/down custom actions.
+2. Tap a sticker to see its color and canonical face/position. Turn on **Highlight selected piece** to outline that cubie's stickers. Face buttons select the corresponding face; center letters identify it on the model.
+3. Choose Clockwise, Counterclockwise or Half turn, then **Turn**. The highlighted face and curved arrow indicate the turn, viewed from outside that face. Normal animation is 420 ms; **Slow motion** uses 1,000 ms.
+4. **Replay** animates the same last turn from its original starting state and leaves the result unchanged. All mutating controls are disabled during playback. Leaving the app cancels an unfinished turn and restores the last committed state.
+5. Use **Examples** in the navigation bar to load a solved or mixed cube. This clears replay history. Scroll the controls on small screens or with large text; the Turn button stays visible at the bottom.
+
+`CubeRenderLayout` exposes the core's canonical positions and face bases without duplicating facelet conventions. Each of 26 visible cubies owns its body, sticker meshes and center label. Nine cubies are reparented to a pivot for each turn. The renderer samples a signed axis-angle over time (including a clockwise 180° path), then rebuilds the exact canonical endpoint to avoid floating-point accumulation. Non-AR rendering never requests camera access.
+
+`CubePlayback` owns logical state and issues unique turn tokens. It rejects overlapping starts, commits only completed tokens, rejects stale completion after reset/cancel, and stores the source/target for replay. `CubeScene` owns rendering and camera state, cancels its task on background/detach, and never changes cube state from hit testing or orbit. The component accepts any `CubeState`, including nonstandard center colors.
+
+Verification: 48 package tests passed on macOS and 48 native tests passed on iPhone 16e Simulator / iOS 26. Geometry tests transform every sticker with the same signed quaternion used for rendering across all 18 turns and a mixed sequence, checking both position and outward normal against core permutation results. Playback tests cover repeated replay, overlaps, cancellation, replacement and stale completion. Simulator UI checks cover actual rendering, turns, replay, sticker/piece selection, example loading, camera orbit through accessibility actions and instructional-angle reset; physical-iPhone performance and gestures remain to be verified because paired devices were unavailable. Simulator automation delivered attempted drags as taps, so drag-orbit is implemented but not counted as a verified gesture.
+
+Simulator captures: [iPhone mixed cube](Docs/Renderer/iphone.png) · [iPad solved cube](Docs/Renderer/ipad.png).
