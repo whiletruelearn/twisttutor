@@ -3,7 +3,16 @@ import CubeCore
 import AppWorkflow
 
 struct ManualEntryView: View {
-    @State private var entry = ManualCubeEntry()
+    @State private var entry: ManualCubeEntry
+    let forLearning: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    @MainActor init() { self.init(entry: ManualCubeEntry()) }
+
+    init(entry: ManualCubeEntry, forLearning: Bool = false) {
+        _entry = State(initialValue: entry)
+        self.forLearning = forLearning
+    }
     @State private var scene = CubeScene()
     @State private var reviewing = false
     @State private var inspecting = false
@@ -33,11 +42,14 @@ struct ManualEntryView: View {
                             }
                         }.padding(.top, 16).padding(.trailing, 16)
                     }
-                    .frame(height: max(240, geometry.size.height - (textSize.isAccessibilitySize ? 480 : inspecting && !reviewing ? 220 : 360)))
+                    .frame(height: max(240, geometry.size.height - (textSize.isAccessibilitySize ? 480 : inspecting && !reviewing ? 220 : face == .up || face == .down ? 440 : 360)))
+                    if !reviewing && !inspecting && (face == .up || face == .down) {
+                        neighboringColors.padding(.horizontal, 24).padding(.bottom, 12)
+                    }
                     VStack(spacing: 6) {
                         Text(reviewing ? "Ready for the first move?" : inspecting ? "Take a look around" : "Match the \(face.title.lowercased()) face")
                             .font(.title2.bold()).fontDesign(.rounded)
-                        Text(reviewing ? "Check all six sides. Tap a face above to edit." : inspecting ? "Drag to rotate. Your colors stay unchanged." : "Keep \(faceDescription(ManualCubeEntry.topNeighbor(of: face))) at the top.")
+                        Text(reviewing ? "Check all six sides. Tap a face above to edit." : inspecting ? "Drag to rotate. Your colors stay unchanged." : "Use Inspect to see how to hold and paint your cube.")
                             .font(.subheadline).foregroundStyle(CubeStyle.secondary).multilineTextAlignment(.center)
                     }.padding(.horizontal, 24).padding(.bottom, 20)
                     entryDrawer
@@ -45,6 +57,7 @@ struct ManualEntryView: View {
             }
         }
         .background(CubeStyle.stage.ignoresSafeArea()).foregroundStyle(.white)
+        .toolbar(.hidden, for: .tabBar)
         .navigationTitle(reviewing ? "Review your cube" : "Your cube").navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(CubeStyle.stage, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
@@ -93,6 +106,28 @@ struct ManualEntryView: View {
         .onDisappear { entry.session.cancelSolutionCalculation(); scene.onPaint = nil }
     }
 
+    private var neighboringColors: some View {
+        VStack(spacing: 8) {
+            Text("Colors beside this face").font(.caption).foregroundStyle(CubeStyle.secondary)
+            HStack(spacing: 14) {
+                ForEach([CubeFaceID.front, .right, .back, .left], id: \.self) { neighbor in
+                    VStack(spacing: 4) {
+                        Text(neighbor.title).font(.caption2)
+                        HStack(spacing: 3) {
+                            ForEach(0..<3, id: \.self) { column in
+                                let index = neighbor.rawValue * 9 + (face == .up ? 0 : 6) + column
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(entry.stickers[index].map { Color(uiColor: $0.colorID.uiColor) } ?? Color.gray)
+                                    .frame(maxWidth: .infinity).frame(height: 16)
+                                    .accessibilityLabel("\(neighbor.title) adjacent sticker \(column + 1), \(entry.stickers[index]?.colorID.rawValue ?? "empty")")
+                            }
+                        }
+                    }.frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
     private var faceProgress: some View {
         HStack(spacing: 4) {
             ForEach(ManualCubeEntry.faceOrder, id: \.self) { item in
@@ -132,7 +167,7 @@ struct ManualEntryView: View {
                     Button("Cancel") { entry.session.cancelSolutionCalculation() }
                 } else if reviewing {
                     validationFeedback
-                    Button { solve() } label: { Text("Show me the moves").frame(maxWidth: .infinity) }
+                    Button { if forLearning { dismiss() } else { solve() } } label: { Text(forLearning ? "Use this cube to learn" : "Show me the moves").frame(maxWidth: .infinity) }
                         .buttonStyle(CubePrimaryButton()).disabled(!entry.canSolve)
                 } else {
                     HStack(spacing: 12) {

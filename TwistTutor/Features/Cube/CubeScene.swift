@@ -11,6 +11,8 @@ final class CubeScene {
     var selectedIndex: Int?
     var allowsOrbit = true
     var showsTurnGuide = true
+    var sourceHighlights: Set<Int> = []
+    var destinationHighlights: Set<Int> = []
     var entryColors: [CubeColorID?]?
     @ObservationIgnored var onPaint: ((Int) -> Void)?
     @ObservationIgnored private var focusedFace: CubeFaceID?
@@ -52,6 +54,13 @@ final class CubeScene {
         selectedFace = turn.move.face
         amount = turn.move.amount
         animate(turn)
+    }
+
+    func confirmNextWithoutAnimation() {
+        guard let turn = playback.beginNext() else { return }
+        _ = playback.complete(turn.id)
+        if let next = playback.nextMove { selectedFace = next.face; amount = next.amount }
+        rebuild(playback.cube)
     }
 
     func previousStep() {
@@ -122,7 +131,8 @@ final class CubeScene {
     func updateCamera() {
         if let face = focusedFace {
             let location = CubeRenderLayout.facelets[face.rawValue * 9 + 4]
-            camera.look(at: .zero, from: location.normal * 6.6 + location.right * 0.8 - location.down * 0.6, upVector: -location.down, relativeTo: anchor)
+            let context: Float = face == .up || face == .down ? 2.2 : 0.8
+            camera.look(at: .zero, from: location.normal * 6.6 + location.right * context - location.down * context, upVector: -location.down, relativeTo: anchor)
             return
         }
         let radius: Float = 8
@@ -202,6 +212,7 @@ final class CubeScene {
                 do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
             }
             guard !Task.isCancelled, let self, self.playback.complete(turn.id) else { return }
+            if let next = self.playback.nextMove { self.selectedFace = next.face; self.amount = next.amount }
             self.rebuild(self.playback.cube)
             self.animation = nil
             if self.isAutoPlaying { self.nextStep() }
@@ -224,7 +235,10 @@ final class CubeScene {
             for location in CubeRenderLayout.facelets where location.position == position {
                 let isHighlighted = highlightPiece && selectedPosition != nil
                     ? selectedPosition == position : location.index / 9 == selectedFace.rawValue
-                let backing = ModelEntity(mesh: .generateBox(width: 0.88, height: 0.88, depth: 0.015, cornerRadius: 0.055), materials: [UnlitMaterial(color: entryColors == nil && showsTurnGuide && isHighlighted ? .white : UIColor(white: 0.08, alpha: 1))])
+                let border: UIColor = sourceHighlights.contains(location.index) ? .white
+                    : destinationHighlights.contains(location.index) ? UIColor(red: 0.15, green: 0.7, blue: 1, alpha: 1)
+                    : entryColors == nil && showsTurnGuide && isHighlighted ? .white : UIColor(white: 0.08, alpha: 1)
+                let backing = ModelEntity(mesh: .generateBox(width: 0.88, height: 0.88, depth: 0.015, cornerRadius: 0.055), materials: [UnlitMaterial(color: border)])
                 backing.position = location.normal * 0.489
                 backing.orientation = simd_quatf(from: SIMD3<Float>(0,0,1), to: location.normal)
                 cubie.addChild(backing)
