@@ -1,6 +1,6 @@
 # TwistTutor: Cube Solver
 
-An offline iOS cube solver and beginner tutor, under development. ENG-595–598 establish the cube foundation; ENG-599–601 add an offline two-phase solver and independently verified results. ENG-602–603 add an interactive RealityKit cube with animated turns. The app now opens the cube explorer; manual input, scanning, guided solving and lessons are subsequent milestones.
+An offline iOS cube solver and beginner tutor, under development. ENG-595–598 establish the cube foundation; ENG-599–601 add an offline two-phase solver and independently verified results. ENG-602–603 add an interactive RealityKit cube with animated turns. ENG-604 adds manual color entry with validation, verified solving and solution playback. The app opens the cube explorer; **Enter cube manually** opens the camera-independent test flow. Scanning, full instructional solving and lessons are subsequent milestones.
 
 - Display name: `TwistTutor: Cube Solver`
 - Bundle identifier: `com.serendipitylabs.twisttutor`
@@ -15,7 +15,8 @@ Open `TwistTutor.xcodeproj`, select a simulator and run the `TwistTutor` scheme.
 | Boundary | Responsibility | Status |
 | --- | --- | --- |
 | `TwistTutor/App` | SwiftUI app composition and session ownership | Implemented |
-| `TwistTutor/Features/Home` | Cube explorer with examples, face selection and playback controls | Implemented |
+| `TwistTutor/Features/Home` | Cube explorer and entry point to manual solving | Implemented |
+| `TwistTutor/Features/ManualEntry` | 54-sticker entry, validation and verified solution playback | M4 integration harness implemented |
 | `Packages/TwistTutorKit/Sources/CubeCore` | Models, notation, integer geometry, turns, conversion, capture orientation | Implemented; independent of UI and camera |
 | `Packages/TwistTutorKit/Sources/CubeValidation` | Color checks, piece uniqueness and physical legality | Implemented; depends only on CubeCore |
 | `Packages/TwistTutorKit/Sources/AppWorkflow` | Main-actor observable session and cancellation | Implemented; depends on core and validation |
@@ -142,7 +143,7 @@ swift run -c release --package-path Packages/TwistTutorKit SolverTools benchmark
 
 For a cold simulator benchmark, run only `TwistTutorTests/SolverBenchmarkTests` in a fresh Release test process with `ENABLE_TESTABILITY=YES` and `ONLY_ACTIVE_ARCH=YES`. Running the benchmark after other tests is a warm-table measurement.
 
-No physical iPhone was available during this slice. The approximately two-second target is comfortably met on the measured host/simulator; it remains **unverified on supported physical iPhones**, especially the oldest supported devices. The solver is not yet connected to the user-facing explorer; manual input and guided solving will expose it in later milestones.
+No physical iPhone was available during this slice. The approximately two-second target is comfortably met on the measured host/simulator; it remains **unverified on supported physical iPhones**, especially the oldest supported devices. The solver is now connected through the M4 manual-entry route. Full instructional solving remains M7.
 
 
 ## Interactive cube (ENG-602–603)
@@ -164,3 +165,24 @@ On an iPhone or iPad:
 Verification: 48 package tests passed on macOS and 48 native tests passed on iPhone 16e Simulator / iOS 26. Geometry tests transform every sticker with the same signed quaternion used for rendering across all 18 turns and a mixed sequence, checking both position and outward normal against core permutation results. Playback tests cover repeated replay, overlaps, cancellation, replacement and stale completion. Simulator UI checks cover actual rendering, turns, replay, sticker/piece selection, example loading, camera orbit through accessibility actions and instructional-angle reset; physical-iPhone performance and gestures remain to be verified because paired devices were unavailable. Simulator automation delivered attempted drags as taps, so drag-orbit is implemented but not counted as a verified gesture.
 
 Simulator captures: [iPhone mixed cube](Docs/Renderer/iphone.png) · [iPad solved cube](Docs/Renderer/ipad.png).
+
+
+## Manual entry → verified solve → animation (ENG-604)
+
+Open **Enter cube manually** below the explorer. This is the explicit M4 test route, available in normal builds; it needs no camera or developer settings.
+
+1. Choose the physical cube's Up and Front faces and keep those names fixed. Pick a face tab, look straight at that face and keep the indicated neighboring face at its top edge. The top-edge hints use the core's canonical orientation, including Back above Up and Front above Down. Expand **How to orient the cube** for the holding reminder.
+2. Select a named color and tap stickers in the 3×3 grid. All 54 stickers, including centers, are editable. Entries start empty, and **Erase** returns a sticker to empty. Six counters track the color totals; centers are not tied to a preset color scheme.
+3. Finish all six faces. Validation checks counts, unique centers, real piece identities, edge flips, corner twists and permutation parity. Invalid input cannot reach the solver. Details identify suspect pieces where possible; the screen distinguishes incomplete entries from impossible states.
+4. Tap **Validate & solve**. A verified solution opens the rendered cube with **Next move**, **Play solution**, **Pause**, **Slow motion**, **Replay last** and **Restart**. Completion requires consuming every verified move and a logically solved endpoint. An already-solved input needs zero moves.
+5. Pause/backgrounding cancels the in-flight turn and restores the last committed endpoint. Resume retries that move. Replay does not advance the move counter. Returning to entry preserves the colors and discards the old result; editing, clearing or loading an example invalidates pending solver work.
+
+The entry options menu provides solved/mixed fixtures and confirmed clearing for testing. The mixed fixture is `R U R' U' F2 D L2 B`. For a quick rejection check, load the solved example and recolor one sticker: the counts become invalid and solving is disabled. Restore it to verify the zero-move path, or load the mixed example to play a complete solve.
+
+`ManualCubeEntry` holds optional stickers, preserving unfilled state and stable identities. `AppSession.enterManually` validates a supplied snapshot and cancels previous operations without pretending it came from camera captures. `CubePlayback(solution:)` accepts only verified plans and disallows arbitrary face turns while following a plan. Renderer completion tokens advance the plan; stale or cancelled completions cannot skip moves. No camera recognition, physical-cube recovery guidance, persistence or teaching is introduced by this slice.
+
+Validation: **55 package tests and 55 native iPhone simulator tests passed**. New coverage includes all 54 manually entered colors with a nonstandard center scheme, invalid colors/centers/flipped edges rejected before solver invocation, stale results after edit/clear, pause/restart/replay/overlap, canonical orientation hints and zero-move completion. Physical-iPhone gesture and performance checks remain pending; paired devices were unavailable.
+
+Native simulator checks exercised painting a sticker, invalid-count rejection and correction, the zero-move path, and a 19-move mixed-cube solve to the visibly solved endpoint. A navigation-time blank viewport found during testing was fixed by maintaining camera pose during RealityKit scene updates.
+
+Screenshots: [manual editor](Docs/ManualEntry/entry.png) · [verified solution ready to play](Docs/ManualEntry/solution.png).

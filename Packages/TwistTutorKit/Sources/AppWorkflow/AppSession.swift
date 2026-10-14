@@ -63,6 +63,20 @@ public final class AppSession {
 
     public func rescan() { start(mode) }
 
+    /// Explicit camera-independent entry path. Always invalidates earlier work and validates locally.
+    public func enterManually(_ cube: CubeState) {
+        cancelPendingWork()
+        mode = .solve
+        captures = []
+        self.cube = cube
+        solution = nil
+        errorMessage = nil
+        let report = CubeValidator.validate(cube)
+        validation = report
+        phase = report.isValid ? .cubeReady : .requiresCorrection
+    }
+
+
     public func beginFaceProcessing() throws -> OperationToken {
         guard phase == .scanning else { throw WorkflowError.unexpectedPhase(phase) }
         let token = newOperation()
