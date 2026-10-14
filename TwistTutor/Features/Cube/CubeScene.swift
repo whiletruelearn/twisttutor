@@ -1,5 +1,6 @@
 import SwiftUI
 import RealityKit
+import Combine
 import CubeCore
 import AppWorkflow
 
@@ -10,6 +11,7 @@ final class CubeScene {
     var selectedIndex: Int?
     var selectedFace: CubeFaceID = .front
     var highlightPiece = false
+    private(set) var isAutoPlaying = false
     var slow = false
     var amount: TurnAmount = .clockwise
     private(set) var viewRevision = 0
@@ -18,11 +20,33 @@ final class CubeScene {
     @ObservationIgnored private let cubeRoot = Entity()
     @ObservationIgnored private let camera = PerspectiveCamera()
     @ObservationIgnored private var cubies: [Entity] = []
+    @ObservationIgnored private var cameraUpdates: (any Cancellable)?
     @ObservationIgnored private var animation: Task<Void, Never>?
     @ObservationIgnored private var yaw: Float = .pi / 4
     @ObservationIgnored private var pitch: Float = .pi / 6
 
     init(cube: CubeState = try! .solved()) { playback = CubePlayback(cube: cube) }
+    init(playback: CubePlayback) { self.playback = playback }
+
+    func nextStep() {
+        guard let turn = playback.beginNext() else { isAutoPlaying = false; return }
+        selectedFace = turn.move.face
+        amount = turn.move.amount
+        animate(turn)
+    }
+
+    func playSolution() {
+        guard !playback.isBusy, playback.nextMove != nil else { return }
+        isAutoPlaying = true
+        nextStep()
+    }
+
+    func restartSolution() {
+        cancel()
+        playback.restartSolution()
+        if let next = playback.nextMove { selectedFace = next.face; amount = next.amount }
+        rebuild(playback.cube)
+    }
 
     func attach(_ view: ARView) {
         self.view = view
@@ -33,10 +57,17 @@ final class CubeScene {
         anchor.addChild(camera)
         camera.camera.fieldOfViewInDegrees = 42
         updateCamera()
+        // A navigation destination can attach before its world anchor is active.
+        // Derive the camera pose during scene updates as well as gesture changes.
+        cameraUpdates?.cancel()
+        cameraUpdates = view.scene.subscribe(to: SceneEvents.Update.self) { [weak self] _ in
+            self?.updateCamera()
+        }
         rebuild(playback.cube)
     }
 
     func detach() {
+        cameraUpdates?.cancel(); cameraUpdates = nil
         cancel()
         anchor.removeFromParent()
         view = nil
@@ -93,6 +124,7 @@ final class CubeScene {
     }
 
     func cancel() {
+        isAutoPlaying = false
         animation?.cancel(); animation = nil
         playback.cancel()
         rebuild(playback.cube)
@@ -125,6 +157,7 @@ final class CubeScene {
             guard !Task.isCancelled, let self, self.playback.complete(turn.id) else { return }
             self.rebuild(self.playback.cube)
             self.animation = nil
+            if self.isAutoPlaying { self.nextStep() }
         }
     }
 
