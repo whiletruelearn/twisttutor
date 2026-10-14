@@ -1,6 +1,7 @@
 import XCTest
 import AppWorkflow
 import CubeCore
+import CubeSolver
 
 @MainActor
 final class AppSessionTests: XCTestCase {
@@ -16,12 +17,13 @@ final class AppSessionTests: XCTestCase {
         XCTAssertTrue(session.validation?.isValid == true)
         let token = try session.beginSolutionCalculation()
         XCTAssertEqual(session.phase, .calculatingSolution)
-        XCTAssertTrue(session.finishSolutionCalculation(token: token, verified: false))
+        session.failSolutionCalculation(token: token)
         XCTAssertEqual(session.phase, .cubeReady)
         XCTAssertNotNil(session.errorMessage)
         let retry = try session.beginSolutionCalculation()
-        XCTAssertFalse(session.finishSolutionCalculation(token: token, verified: true))
-        XCTAssertTrue(session.finishSolutionCalculation(token: retry, verified: true))
+        let result = try SolutionVerifier.verify([], for: XCTUnwrap(session.cube))
+        XCTAssertFalse(try session.finishSolutionCalculation(token: token, solution: result))
+        XCTAssertTrue(try session.finishSolutionCalculation(token: retry, solution: result))
         XCTAssertEqual(session.phase, .solving)
         try session.complete()
         XCTAssertEqual(session.phase, .completed)
@@ -129,8 +131,97 @@ final class AppSessionTests: XCTestCase {
         XCTAssertNil(session.errorMessage)
     }
 
+    func testSessionRunsRealSolverAndExposesVerifiedMoves() async throws {
+        let session = AppSession()
+        session.start(.solve)
+        let cube = try CubeState.solved().applying(MoveNotation.parse("R U F' L2 D"))
+        try scanCube(cube, into: session)
+        try session.validateCurrentCube()
+        let work = try session.calculateSolution()
+        XCTAssertEqual(session.phase, .calculatingSolution)
+        await work.value
+        XCTAssertEqual(session.phase, .solving)
+        let solution = try XCTUnwrap(session.solution)
+        XCTAssertTrue(cube.applying(solution.moves).isSolved)
+        XCTAssertEqual(solution.initialCube, cube)
+    }
+
+    func testUnverifiedOutputFailsAndCanBeRetried() async throws {
+        let session = AppSession()
+        session.start(.solve)
+        let cube = try CubeState.solved().applying(CubeMove(.right))
+        try scanCube(cube, into: session)
+        try session.validateCurrentCube()
+        let failed = try session.calculateSolution(using: IncorrectSolver())
+        await failed.value
+        XCTAssertEqual(session.phase, .cubeReady)
+        XCTAssertNil(session.solution)
+        XCTAssertNotNil(session.errorMessage)
+        let retry = try session.calculateSolution()
+        await retry.value
+        XCTAssertEqual(session.phase, .solving)
+        XCTAssertNil(session.errorMessage)
+    }
+
+    func testVerifiedResultForDifferentScanIsRejected() async throws {
+        let session = AppSession()
+        session.start(.solve)
+        try scanSolvedCube(into: session)
+        try session.validateCurrentCube()
+        let other = try SolutionVerifier.verify([], for: CubeState.solved())
+        let task = try session.calculateSolution(using: FixedSolver(result: other))
+        await task.value
+        XCTAssertEqual(session.phase, .cubeReady)
+        XCTAssertNil(session.solution)
+        XCTAssertNotNil(session.errorMessage)
+    }
+
+    func testCancelledSolverCannotOverwriteNewRequest() async throws {
+        let session = AppSession()
+        session.start(.solve)
+        try scanSolvedCube(into: session)
+        try session.validateCurrentCube()
+        let oldResult = try SolutionVerifier.verify([], for: XCTUnwrap(session.cube))
+        let gate = SolutionGate()
+        let oldTask = try session.calculateSolution(using: gate)
+        await gate.waitUntilEntered()
+        session.cancelSolutionCalculation()
+        XCTAssertEqual(session.phase, .cubeReady)
+        XCTAssertNil(session.errorMessage)
+        let newTask = try session.calculateSolution()
+        await newTask.value
+        let newResult = session.solution
+        await gate.resolve(oldResult)
+        await oldTask.value
+        XCTAssertTrue(oldTask.isCancelled)
+        XCTAssertEqual(session.solution, newResult)
+        XCTAssertEqual(session.phase, .solving)
+        XCTAssertNil(session.errorMessage)
+    }
+
+    func testRescanDiscardsLateSolverResult() async throws {
+        let session = AppSession()
+        session.start(.solve)
+        try scanSolvedCube(into: session)
+        try session.validateCurrentCube()
+        let result = try SolutionVerifier.verify([], for: XCTUnwrap(session.cube))
+        let gate = SolutionGate()
+        let task = try session.calculateSolution(using: gate)
+        await gate.waitUntilEntered()
+        session.rescan()
+        await gate.resolve(result)
+        await task.value
+        XCTAssertEqual(session.phase, .scanning)
+        XCTAssertNil(session.solution)
+        XCTAssertNil(session.cube)
+        XCTAssertNil(session.errorMessage)
+    }
+
     private func scanSolvedCube(into session: AppSession) throws {
-        let cube = try CubeState.solved()
+        try scanCube(CubeState.solved(), into: session)
+    }
+
+    private func scanCube(_ cube: CubeState, into session: AppSession) throws {
         for (index, face) in CaptureAssembly.sequence.enumerated() {
             XCTAssertEqual(session.nextFace, face)
             let token = try session.beginFaceProcessing()
@@ -140,6 +231,37 @@ final class AppSessionTests: XCTestCase {
                 try session.continueScanning()
             }
         }
+    }
+}
+
+private struct IncorrectSolver: CubeSolving {
+    func solve(_ cube: CubeState) async throws -> VerifiedSolution {
+        try SolutionVerifier.verify([], for: cube)
+    }
+}
+
+private struct FixedSolver: CubeSolving {
+    let result: VerifiedSolution
+    func solve(_ cube: CubeState) async throws -> VerifiedSolution { result }
+}
+
+private actor SolutionGate: CubeSolving {
+    private var continuation: CheckedContinuation<VerifiedSolution, Never>?
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    func solve(_ cube: CubeState) async throws -> VerifiedSolution {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            entryWaiters.forEach { $0.resume() }
+            entryWaiters = []
+        }
+    }
+    func waitUntilEntered() async {
+        if continuation != nil { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+    func resolve(_ result: VerifiedSolution) {
+        continuation?.resume(returning: result)
+        continuation = nil
     }
 }
 
