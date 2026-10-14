@@ -20,7 +20,7 @@ Every milestone is checked on the complete cubie state. The full sequence then p
 
 ## Experience
 
-Four native tabs: Solve cube, Learn, Time solving and Settings. The standalone Just explore entry is removed. Top/bottom painting shows the three nearest edge stickers from each of the four surrounding sides. The main hint directs users to Inspect.
+Four native tabs: Solve cube, Learn, Time solving and Settings. The standalone Just explore entry is removed. Top/bottom painting uses the existing oblique 3D view. The separate neighboring-color strip was removed at the user’s request. The main hint directs users to Inspect.
 
 Learning introduces one pattern at a time, with a stage goal, expandable reason, move notation and plain-language color-based instruction. The fixed bottom tray holds previous/next controls. At stage boundaries the user checks their physical cube. A cube finished during an early stage gets the full completion message. Piece inspection reuses the existing live cube, with white source and blue destination outlines. Replay, slow motion and an optional “I did this move” mode support practice without first watching an animation.
 
@@ -31,7 +31,7 @@ The manual timer stores the most recent 100 times locally, displays 10 recent re
 - 78 release Swift-package tests passed. New teaching coverage includes 500 seeded 25-turn scrambles, stage preservation, piece metadata, remapped centers, solved input, deterministic output, invalid-input rejection, cancellation, and a cube solved before later stages begin.
 - iOS simulator build passed with Xcode 26, iPhone 16e / iOS 26 destination.
 - Simulator interaction verified the Learn practice-cube route, actual-cube lesson generation, introduction, first pattern, and inline piece/destination rendering. Manual top-face selection showed all four adjacent-color reference groups and the Inspect hint.
-- `Docs/Design/Screens/learn/lesson.png` and `piece-inline.png` are live simulator captures. `top-entry.png` predates the final viewport-height adjustment; it verifies reference groups and orientation, not the final spacing.
+- `Docs/Design/Screens/learn/lesson.png` and `piece-inline.png` are live simulator captures. `top-entry.png` is historical and includes the neighboring-color strip that has since been removed.
 - No final full solve, timer/settings interaction, iPad, Dynamic Type, VoiceOver or physical-device verification is claimed. Simulator control intermittently returned noWindowsAvailable/empty accessibility state; orbit and return from the final inline inspection remain unverified interactively.
 - Native source detector reported no findings. This is not a substitute for UI testing.
 
@@ -48,7 +48,7 @@ The review clears these defects; it does not establish end-to-end or device vali
 ## Device check
 
 1. Enter a real mixed cube in Solve, then open Learn and reuse those colors.
-2. Check Up/Down orientation and all four neighboring reference groups. Inspect, return to painting, and confirm the colors stay unchanged.
+2. Check Up/Down orientation using the 3D view. Inspect, return to painting, and confirm the colors stay unchanged.
 3. Start the lesson, inspect a piece, orbit, return, advance and go back. Confirm the displayed face/arrow and physical moves agree.
 4. Follow a complete lesson and compare at every milestone. Also try a cube one bottom turn from solved to check the early completion message.
 5. Start/stop the timer, relaunch to check saved times, interrupt an attempt, and verify clearing history and animation-speed settings.

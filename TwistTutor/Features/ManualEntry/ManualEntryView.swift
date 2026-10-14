@@ -42,10 +42,7 @@ struct ManualEntryView: View {
                             }
                         }.padding(.top, 16).padding(.trailing, 16)
                     }
-                    .frame(height: max(240, geometry.size.height - (textSize.isAccessibilitySize ? 480 : inspecting && !reviewing ? 220 : face == .up || face == .down ? 440 : 360)))
-                    if !reviewing && !inspecting && (face == .up || face == .down) {
-                        neighboringColors.padding(.horizontal, 24).padding(.bottom, 12)
-                    }
+                    .frame(height: max(240, geometry.size.height - (textSize.isAccessibilitySize ? 480 : inspecting && !reviewing ? 220 : 360)))
                     VStack(spacing: 6) {
                         Text(reviewing ? "Ready for the first move?" : inspecting ? "Take a look around" : "Match the \(face.title.lowercased()) face")
                             .font(.title2.bold()).fontDesign(.rounded)
@@ -104,28 +101,6 @@ struct ManualEntryView: View {
         .onChange(of: scenePhase) { _, phase in if phase != .active { entry.session.cancelSolutionCalculation() } }
         .onAppear { syncScene(); if reviewing || inspecting { scene.resetView() } else { scene.focus(on: face) } }
         .onDisappear { entry.session.cancelSolutionCalculation(); scene.onPaint = nil }
-    }
-
-    private var neighboringColors: some View {
-        VStack(spacing: 8) {
-            Text("Colors beside this face").font(.caption).foregroundStyle(CubeStyle.secondary)
-            HStack(spacing: 14) {
-                ForEach([CubeFaceID.front, .right, .back, .left], id: \.self) { neighbor in
-                    VStack(spacing: 4) {
-                        Text(neighbor.title).font(.caption2)
-                        HStack(spacing: 3) {
-                            ForEach(0..<3, id: \.self) { column in
-                                let index = neighbor.rawValue * 9 + (face == .up ? 0 : 6) + column
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(entry.stickers[index].map { Color(uiColor: $0.colorID.uiColor) } ?? Color.gray)
-                                    .frame(maxWidth: .infinity).frame(height: 16)
-                                    .accessibilityLabel("\(neighbor.title) adjacent sticker \(column + 1), \(entry.stickers[index]?.colorID.rawValue ?? "empty")")
-                            }
-                        }
-                    }.frame(maxWidth: .infinity)
-                }
-            }
-        }
     }
 
     private var faceProgress: some View {
