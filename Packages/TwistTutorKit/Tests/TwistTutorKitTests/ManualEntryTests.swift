@@ -106,6 +106,52 @@ import AppWorkflow
         XCTAssertFalse(playback.isSolutionComplete, "A solved explorer cube isn't a completed solution")
     }
 
+    func testPreviousStepRestoresEveryEndpointAndCurrentHighlight() throws {
+        let moves = try MoveNotation.parse("U' R2 F")
+        let initial = try CubeState.solved().applying(MoveNotation.inverse(moves))
+        let playback = CubePlayback(solution: try SolutionVerifier.verify(moves, for: initial))
+        XCTAssertNil(playback.beginPrevious())
+        XCTAssertEqual(playback.currentStepIndex, 0)
+        while let turn = playback.beginNext() { XCTAssertTrue(playback.complete(turn.id)) }
+        XCTAssertNil(playback.currentStepIndex)
+        for index in moves.indices.reversed() {
+            let before = playback.cube
+            let back = try XCTUnwrap(playback.beginPrevious())
+            XCTAssertTrue(back.isBackward)
+            XCTAssertEqual(back.move, moves[index].inverse)
+            XCTAssertEqual(playback.currentStepIndex, index)
+            XCTAssertNil(playback.beginNext())
+            XCTAssertNil(playback.beginPrevious())
+            XCTAssertNil(playback.replay())
+            playback.cancel()
+            XCTAssertEqual(playback.cube, before)
+            XCTAssertEqual(playback.completedMoveCount, index + 1)
+            let retry = try XCTUnwrap(playback.beginPrevious())
+            XCTAssertFalse(playback.complete(back.id))
+            XCTAssertTrue(playback.complete(retry.id))
+            XCTAssertEqual(playback.completedMoveCount, index)
+            XCTAssertEqual(playback.cube, initial.applying(Array(moves.prefix(index))))
+            XCTAssertEqual(playback.currentStepIndex, index)
+            if index > 0 {
+                let replay = try XCTUnwrap(playback.replay())
+                XCTAssertEqual(replay.move, moves[index - 1])
+                XCTAssertEqual(playback.currentStepIndex, index - 1)
+                XCTAssertTrue(playback.complete(replay.id))
+                XCTAssertEqual(playback.completedMoveCount, index)
+            } else {
+                XCTAssertNil(playback.replay())
+            }
+        }
+        XCTAssertNil(playback.beginPrevious())
+        while let turn = playback.beginNext() { XCTAssertTrue(playback.complete(turn.id)) }
+        XCTAssertTrue(playback.isSolutionComplete)
+        let pending = try XCTUnwrap(playback.beginPrevious())
+        playback.restartSolution()
+        XCTAssertFalse(playback.complete(pending.id))
+        XCTAssertEqual(playback.currentStepIndex, 0)
+        XCTAssertEqual(playback.cube, initial)
+    }
+
     func testAlreadySolvedNeedsNoAnimation() async throws {
         let entry = ManualCubeEntry()
         entry.load(try .solved())

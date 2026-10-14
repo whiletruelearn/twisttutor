@@ -35,6 +35,13 @@ final class CubeScene {
         animate(turn)
     }
 
+    func previousStep() {
+        guard !isAutoPlaying, let turn = playback.beginPrevious() else { return }
+        selectedFace = turn.move.face
+        amount = turn.move.amount
+        animate(turn)
+    }
+
     func playSolution() {
         guard !playback.isBusy, playback.nextMove != nil else { return }
         isAutoPlaying = true
@@ -120,6 +127,7 @@ final class CubeScene {
     func replay() {
         guard let turn = playback.replay() else { return }
         selectedFace = turn.move.face
+        amount = turn.move.amount
         animate(turn)
     }
 

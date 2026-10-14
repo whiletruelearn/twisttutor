@@ -12,6 +12,7 @@ public final class CubePlayback {
         public let source: CubeState
         public let target: CubeState
         public let isReplay: Bool
+        public var isBackward = false
     }
 
     public private(set) var cube: CubeState
@@ -27,6 +28,25 @@ public final class CubePlayback {
         guard let solution, completedMoveCount < solution.moves.count else { return nil }
         return solution.moves[completedMoveCount]
     }
+    /// Zero-based step being animated, or the next step while paused.
+    public var currentStepIndex: Int? {
+        guard let solution, !solution.moves.isEmpty else { return nil }
+        if let activeTurn, activeTurn.isReplay || activeTurn.isBackward {
+            return completedMoveCount - 1
+        }
+        return completedMoveCount < solution.moves.count ? completedMoveCount : nil
+    }
+    public var canGoBack: Bool { solution != nil && completedMoveCount > 0 && !isBusy }
+
+    @discardableResult public func beginPrevious() -> Turn? {
+        guard canGoBack, let solution else { return nil }
+        let move = solution.moves[completedMoveCount - 1].inverse
+        let turn = Turn(id: UUID(), move: move, source: cube, target: cube.applying(move),
+                        isReplay: false, isBackward: true)
+        activeTurn = turn
+        return turn
+    }
+
     public var isBusy: Bool { activeTurn != nil }
 
     public init(cube: CubeState) { self.cube = cube }
@@ -70,7 +90,17 @@ public final class CubePlayback {
     @discardableResult public func complete(_ id: UUID) -> Bool {
         guard let turn = activeTurn, turn.id == id else { return false }
         cube = turn.target
-        if !turn.isReplay {
+        if turn.isBackward, let solution {
+            completedMoveCount -= 1
+            // Replay always refers to the last completed forward step at this position.
+            if completedMoveCount > 0 {
+                let source = solution.initialCube.applying(Array(solution.moves.prefix(completedMoveCount - 1)))
+                let move = solution.moves[completedMoveCount - 1]
+                lastTurn = Turn(id: UUID(), move: move, source: source, target: cube, isReplay: false)
+            } else {
+                lastTurn = nil
+            }
+        } else if !turn.isReplay {
             lastTurn = turn
             if solution != nil { completedMoveCount += 1 }
         }
