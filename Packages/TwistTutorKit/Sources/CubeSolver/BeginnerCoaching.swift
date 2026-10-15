@@ -154,8 +154,8 @@ extension BeginnerLesson {
             return "Find the edge with \(c.bottom.name) and \(side.name). It goes under the \(side.name) center with \(c.bottom.name) facing down. It may take a detour on the way."
         case .firstCorners:
             guard let sides = piece?.sideColors(excluding: c.bottom), sides.count == 2 else { return "Park the corner above its gap, then drop it in." }
-            let park = setupMoveCount > 0 ? "First turn the top until it sits right above its gap. " : "It’s already above its gap. "
-            return "This corner lives between the \(sides[0].name) and \(sides[1].name) centers. \(park)Then a short pattern drops it in. If it’s stuck on the bottom, or comes in twisted, the pattern repeats — that’s expected."
+            let park = setupMoveCount > 0 ? "First turn the top until it sits right above its gap. Then a" : "A"
+            return "This corner lives between the \(sides[0].name) and \(sides[1].name) centers. \(park) short pattern drops it in. If it’s stuck on the bottom, or comes in twisted, the pattern repeats — that’s expected."
         case .middleEdges:
             guard let colors = piece?.colors, colors.count == 2 else { return "Line the edge up, then tuck it into the middle." }
             if !placesPiece {
@@ -180,7 +180,9 @@ extension BeginnerLesson {
         if moveIndex < patternRange.lowerBound {
             return "Get ready · turn the top"
         }
-        return "The pattern · turn \(moveIndex - patternRange.lowerBound + 1) of \(patternRange.count)"
+        let turn = "turn \(moveIndex - patternRange.lowerBound + 1) of \(patternRange.count)"
+        // The cross is steered with single turns; there is no pattern to memorize.
+        return stage == .cross ? turn.prefix(1).uppercased() + turn.dropFirst() : "The pattern · \(turn)"
     }
 }
 
@@ -192,6 +194,13 @@ extension TeachingPiece {
 
 extension CubeColorID {
     public var name: String { rawValue }
+}
+
+extension CubeFaceID {
+    /// Where this face is, from the learner's hands.
+    public var whereFromHands: String {
+        ["on top", "on the right", "facing you", "on the bottom", "on the left", "at the back"][rawValue]
+    }
 }
 
 extension CubeMove {

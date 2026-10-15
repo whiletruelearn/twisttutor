@@ -270,7 +270,7 @@ struct ManualSolutionView: View {
                 Text(scene.playback.activeTurn?.isBackward == true ? "Undoing: \(move.spokenInstruction.lowercased())" : move.spokenInstruction)
                     .font(.title3.bold()).fixedSize(horizontal: false, vertical: true)
                 Text(move.handHint).font(.caption).foregroundStyle(Color(white: 0.35))
-                LearningColorCue(color: solution.initialCube.centerColors[move.face.rawValue], caption: "center on that side")
+                LearningColorCue(color: solution.initialCube.centerColors[move.face.rawValue], caption: "center \(move.face.whereFromHands)")
                     .scaleEffect(0.85, anchor: .leading)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.accessibilityElement(children: .combine).accessibilityIdentifier("currentSolutionStep")

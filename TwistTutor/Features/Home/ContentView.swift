@@ -129,7 +129,7 @@ private struct LearnHomeView: View {
                             ProgressView("Preparing your lesson…")
                             Button("Cancel") { cancelPlanning() }.frame(minHeight: 44)
                         } else if entry.canSolve {
-                            Button("Teach me with this cube") { prepareLesson() }.frame(maxWidth: .infinity).buttonStyle(CubePrimaryButton())
+                            Button { prepareLesson() } label: { Text("Teach me with this cube").frame(maxWidth: .infinity) }.buttonStyle(CubePrimaryButton())
                         }
                         NavigationLink { ManualEntryView(entry: entry, forLearning: true) } label: {
                             Label(entry.filledCount == 0 ? "Enter my cube’s colors" : "Edit my cube’s colors", systemImage: "paintpalette")
@@ -224,10 +224,10 @@ private struct LearningIntroduction: View {
                         pageContent
                         HStack(spacing: 12) {
                             if page > 0 {
-                                Button("Back") { withAnimation { page -= 1 } }.frame(minWidth: 72, minHeight: 52)
+                                Button("Back") { page -= 1 }.frame(minWidth: 72, minHeight: 52)
                             }
                             if page < pages - 1 {
-                                Button { withAnimation { page += 1 } } label: { Text(page == 0 ? "Got it, I’m holding it" : "Next").frame(maxWidth: .infinity) }
+                                Button { page += 1 } label: { Text(page == 0 ? "Got it, I’m holding it" : "Next").frame(maxWidth: .infinity) }
                                     .buttonStyle(CubePrimaryButton())
                             } else if plan.solution.moves.isEmpty {
                                 Label("Your cube is already solved", systemImage: "checkmark.circle.fill").font(.headline)
@@ -245,8 +245,8 @@ private struct LearningIntroduction: View {
             .navigationTitle("Meet your cube").navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(CubeStyle.stage, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .onAppear { showExample() }
-            .onChange(of: page) { _, _ in showExample() }
+            .onAppear { showExample(page) }
+            .onChange(of: page) { _, newPage in showExample(newPage) }
     }
 
     private var title: String {
@@ -317,7 +317,7 @@ private struct LearningIntroduction: View {
         LearningColorCue(color: colors.top, caption: "center on top")
     }
 
-    private func showExample() {
+    private func showExample(_ page: Int) {
         scene.resetView()
         scene.showsTurnGuide = page == 3
         scene.selectedFace = .right
