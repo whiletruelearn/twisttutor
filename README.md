@@ -231,3 +231,21 @@ Regression tests include rounded faces without an outer frame, modest rotation, 
 Manual solve now includes **Previous step** beside playback controls. It animates the inverse of the most recently completed move; the counter changes only when that animation finishes. Cancelling restores the committed endpoint. You can go backward from the solved state, return to the initial cube, and continue forward again. Replay remains a demonstration of the last completed forward step without advancing progress.
 
 A numbered, horizontally scrolling strip stays above the bottom controls, highlights the current step, and follows forward, backward and replay playback. The caption distinguishes Next, Playing, Undoing and Replaying; completed steps are marked Done. All 71 package tests pass and the simulator app builds. Device/UI verification of these new controls is pending.
+
+## Guided 3D entry (ENG-635)
+
+The home screen now leads with **Enter my cube**. Camera scanning is deferred and has no entry point in the user flow; its existing implementation and regression tests remain in the repository.
+
+Choose a color in the fixed palette and tap matching stickers directly on the 3D cube. Blank stickers are gray. Drag to orbit, then use **Face front** to restore the named face and canonical top edge. Only that named face accepts paint, preventing accidental edits to an adjacent face. **Previous face / Next face** guide Front, Right, Back, Left, Up, Down. Counts show completed faces and remaining colors; excess colors are reported rather than silently blocked. **Undo** restores paint, erase, example-load and clear operations. **Sticker buttons** provides a labeled 3×3 accessibility alternative.
+
+**Review cube** shows an angled, draggable preview. Select a face to correct it; **Solve my cube** stays disabled until the existing validator accepts the full cube. Solutions retain step navigation and interactive playback.
+
+Validation: 73 release package tests and 73 native iPhone simulator tests passed. Simulator UI checks verified direct painting, undo, and the final initial rendering with cube and palette together. Camera pose now updates after viewport layout, fixing a blank initial viewport observed during navigation. Physical-device gestures, iPad layout and accessibility-size visual checks remain pending. Screenshot: `Docs/ManualEntry/guided-entry.png`.
+
+## Cube first redesign
+
+The user-selected Cube first direction uses a navy cube stage and a light working tray across home, manual entry, and solving. Entry separates **Paint** (fixed selected-face orientation) from **Inspect** (free rotation, no painting). Complete nine stickers to continue, or tap any face in the progress row to revisit it. Examples, help, and accessible sticker buttons live in Entry options. Solving leads with one move and a primary next-step action; replay, automatic playback, slow motion, and restart remain in Playback options. A dedicated explorer keeps its own cube visible above scrolling controls.
+
+Reference and implementation decisions: `Docs/Design/cube-first-brief.md`, `DESIGN.md`. The generated concept is a reference only; the app renders interactive geometry.
+
+Validation: 73 package tests pass; final simulator build passes. Simulator interaction checks confirmed painting counts, fixed painting orientation and color-preserving Inspect. The final home screenshot is in `Docs/Design/Screens/home.png`; entry/inspect screenshots capture the first review pass before Reset, button contrast and tray-height corrections. Those corrections were reviewed in source and compiled. Simulator UI access then timed out, so the complete final solve/explorer flow, physical-device gestures, iPad and accessibility-size layout remain pending.

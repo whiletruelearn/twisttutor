@@ -8,6 +8,21 @@ import Observation
 public final class ManualCubeEntry {
     public private(set) var stickers: [Sticker?] = Array(repeating: nil, count: 54)
     public let session = AppSession()
+    private var history: [[Sticker?]] = []
+    public var canUndo: Bool { !history.isEmpty }
+    public static let faceOrder: [CubeFaceID] = [.front, .right, .back, .left, .up, .down]
+    public var completedFaceCount: Int {
+        Self.faceOrder.filter { filledCount(on: $0) == 9 }.count
+    }
+    public func filledCount(on face: CubeFaceID) -> Int {
+        stickers[(face.rawValue * 9)..<(face.rawValue * 9 + 9)].compactMap { $0 }.count
+    }
+    public func undo() {
+        guard let previous = history.popLast() else { return }
+        session.leave()
+        stickers = previous
+    }
+
 
     public init() {}
     public var filledCount: Int { stickers.compactMap { $0 }.count }
@@ -22,6 +37,8 @@ public final class ManualCubeEntry {
 
     public func setColor(_ color: CubeColorID?, at index: Int) throws {
         guard stickers.indices.contains(index) else { throw CubeModelError.indexOutOfRange(index) }
+        guard stickers[index]?.colorID != color else { return }
+        history.append(stickers)
         session.leave()
         if let color {
             if var sticker = stickers[index] { sticker.colorID = color; stickers[index] = sticker }
@@ -30,11 +47,13 @@ public final class ManualCubeEntry {
     }
 
     public func load(_ cube: CubeState) {
+        history.append(stickers)
         session.leave()
         stickers = cube.stickers.map { $0 }
     }
 
     public func clear() {
+        history.append(stickers)
         session.leave()
         stickers = Array(repeating: nil, count: 54)
     }

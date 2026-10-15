@@ -5,6 +5,49 @@ import CubeSolver
 import AppWorkflow
 
 @MainActor final class ManualEntryTests: XCTestCase {
+    func testGuidedFaceProgressUndoEraseAndClear() throws {
+        let entry = ManualCubeEntry()
+        XCTAssertEqual(Set(ManualCubeEntry.faceOrder), Set(CubeFaceID.allCases))
+        XCTAssertFalse(entry.canUndo)
+        for face in ManualCubeEntry.faceOrder {
+            for local in 0..<9 { try entry.setColor(.red, at: face.rawValue * 9 + local) }
+            XCTAssertEqual(entry.filledCount(on: face), 9)
+        }
+        XCTAssertEqual(entry.completedFaceCount, 6)
+        XCTAssertEqual(entry.count(.red), 54)
+        XCTAssertFalse(entry.canSolve)
+        try entry.setColor(nil, at: 0)
+        XCTAssertEqual(entry.completedFaceCount, 5)
+        entry.undo()
+        XCTAssertEqual(entry.completedFaceCount, 6)
+        entry.clear()
+        XCTAssertEqual(entry.filledCount, 0)
+        entry.undo()
+        XCTAssertEqual(entry.filledCount, 54)
+        entry.load(try .solved())
+        XCTAssertTrue(entry.canSolve)
+        entry.undo()
+        XCTAssertEqual(entry.count(.red), 54)
+    }
+
+    func testNoOpPaintDoesNotConsumeUndoAndUndoInvalidatesSolution() async throws {
+        let entry = ManualCubeEntry()
+        try entry.setColor(nil, at: 0)
+        XCTAssertFalse(entry.canUndo)
+        try entry.setColor(.blue, at: 0)
+        try entry.setColor(.blue, at: 0)
+        entry.undo()
+        XCTAssertEqual(entry.filledCount, 0)
+        XCTAssertFalse(entry.canUndo)
+        entry.load(try .solved())
+        let task = try XCTUnwrap(entry.solve())
+        await task.value
+        XCTAssertNotNil(entry.session.solution)
+        entry.undo()
+        XCTAssertNil(entry.session.solution)
+        XCTAssertEqual(entry.filledCount, 0)
+    }
+
     func testIncompleteEntryEraseAndEditableCenters() throws {
         let entry = ManualCubeEntry()
         XCTAssertEqual(entry.filledCount, 0)
