@@ -10,7 +10,7 @@ struct ManualSolutionView: View {
     let teachingPlan: BeginnerPlan?
     @AppStorage("slowMoves") private var slowMoves = true
     @State private var checkpoint: BeginnerStage?
-    @State private var showCheckpoint = false
+    @State private var retracing = false
     @State private var showHoldingHelp = false
     @State private var showPiece = false
     @State private var goalScene: CubeScene?
@@ -37,17 +37,26 @@ struct ManualSolutionView: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 0) {
-                    HStack {
-                        Text(goalScene != nil ? "Your goal" : scene.playback.isSolutionComplete ? "You did it." : lesson?.stage.title ?? "One twist at a time.")
-                            .font(.title2.bold()).fontDesign(.rounded)
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if teachingPlan != nil, let lesson, !scene.playback.isSolutionComplete {
+                                Text("Goal \(lesson.stage.number) of 7 · \(lesson.stage.layer.title)")
+                                    .font(.caption.weight(.semibold)).foregroundStyle(CubeStyle.secondary)
+                                    .accessibilityIdentifier("solutionProgress")
+                            }
+                            Text(scene.playback.isSolutionComplete ? "You did it." : lesson.map { $0.stage.headline(coach) } ?? "One twist at a time.")
+                                .font(.title2.bold()).fontDesign(.rounded)
+                        }
                         Spacer()
-                        Text(teachingPlan == nil ? "\(scene.playback.completedMoveCount) / \(solution.moves.count)" : scene.playback.isSolutionComplete ? "Complete" : "Stage \((lesson?.stage.rawValue ?? 6) + 1) of 7")
-                            .font(.subheadline.monospacedDigit()).foregroundStyle(CubeStyle.secondary)
-                            .accessibilityIdentifier("solutionProgress")
+                        if teachingPlan == nil {
+                            Text("\(scene.playback.completedMoveCount) / \(solution.moves.count)")
+                                .font(.subheadline.monospacedDigit()).foregroundStyle(CubeStyle.secondary)
+                                .accessibilityIdentifier("solutionProgress")
+                        }
                     }.padding(24)
                     CubeViewport(scene: goalScene ?? scene)
                         .id(ObjectIdentifier(goalScene ?? scene))
-                        .frame(height: max(260, geometry.size.height - (textSize.isAccessibilitySize ? 480 : 340)))
+                        .frame(height: max(teachingPlan == nil ? 260 : 220, geometry.size.height - (textSize.isAccessibilitySize ? 480 : teachingPlan == nil ? 340 : 500)))
                         .overlay(alignment: .topTrailing) {
                             Button { (goalScene ?? scene).resetView() } label: {
                                 Image(systemName: "viewfinder").font(.title3).frame(width: 48, height: 48)
@@ -56,64 +65,25 @@ struct ManualSolutionView: View {
                         }
                     VStack(spacing: 14) {
                         if goalScene != nil, let lesson {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text(lesson.stage.title).font(.title2.bold()).fontDesign(.rounded)
-                                Text("Your cube after this stage").font(.subheadline.bold())
-                                Text(lesson.stage.goal).font(.subheadline).foregroundStyle(Color(white: 0.35))
-                                Label("Preview only · drag to look around", systemImage: "hand.draw")
-                                    .font(.caption).foregroundStyle(Color(white: 0.35))
-                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            goalBriefing(lesson.stage)
                         } else if showPiece, let piece = lesson?.piece {
                             pieceExplanation(piece)
                         } else {
-                        if let lesson {
-                            HStack {
-                                Button("See goal", systemImage: "scope") { presentGoal() }
-                                Spacer()
-                                if lesson.piece != nil {
-                                    Button("Find piece", systemImage: "viewfinder") { showPiece = true }
-                                }
-                                Spacer()
-                                Button("Why?", systemImage: "questionmark.circle") { showWhy = true }
-                            }.font(.subheadline).frame(minHeight: 44).disabled(scene.playback.isBusy)
-                        }
-                        if let move = scene.playback.activeTurn?.move ?? scene.playback.nextMove {
+                        if let lesson, let move = scene.playback.activeTurn?.move ?? scene.playback.nextMove {
+                            teachingStep(lesson, move: move)
+                        } else if let move = scene.playback.activeTurn?.move ?? scene.playback.nextMove {
                             HStack(alignment: .center, spacing: 14) {
-                                if teachingPlan == nil {
-                                    Text(move.notation).font(.largeTitle.bold()).fontDesign(.rounded).frame(minWidth: 54)
-                                } else {
-                                    Image(systemName: move.amount == .counterclockwise ? "arrow.counterclockwise" : "arrow.clockwise")
-                                        .font(.largeTitle).foregroundStyle(CubeStyle.action).frame(minWidth: 54)
-                                        .accessibilityHidden(true)
-                                }
+                                Text(move.notation).font(.largeTitle.bold()).fontDesign(.rounded).frame(minWidth: 54)
                                 VStack(alignment: .leading, spacing: 6) {
-                                    if teachingPlan != nil {
-                                        LearningColorCue(color: solution.initialCube.centerColors[move.face.rawValue], caption: "center · \(move.face.title.lowercased())")
-                                        Text(move.amount == .half ? "Half turn" : "Quarter turn \(direction(move.amount))").font(.headline)
-                                        Text("Look directly at this face to turn it.").font(.caption).foregroundStyle(Color(white: 0.35))
-                                    } else {
-                                        Text("\(stepAction): \(move.face.title.lowercased()) face").font(.headline)
-                                        Text("Turn the \(solution.initialCube.centerColors[move.face.rawValue].rawValue)-center face \(direction(move.amount)), looking at that face.")
-                                            .font(.subheadline).foregroundStyle(Color(white: 0.35))
-                                    }
+                                    Text("\(stepAction): \(move.face.title.lowercased()) face").font(.headline)
+                                    Text("Turn the \(solution.initialCube.centerColors[move.face.rawValue].rawValue)-center face \(direction(move.amount)), looking at that face.")
+                                        .font(.subheadline).foregroundStyle(Color(white: 0.35))
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
                         } else {
                             Label("Your cube is solved", systemImage: "checkmark.circle.fill").font(.title2.bold()).foregroundStyle(.green)
                         }
-                        if !solution.moves.isEmpty {
-                            if teachingPlan == nil { stepStrip }
-                            else if lesson != nil {
-                                HStack {
-                                    Text("\(stepAction) move \(min(visibleMoves.count, max(1, (scene.playback.currentStepIndex ?? scene.playback.completedMoveCount) - visibleMoves.lowerBound + 1))) of \(visibleMoves.count)")
-                                        .font(.subheadline.bold()).accessibilityIdentifier("currentSolutionStep")
-                                    Spacer()
-                                    Button("All moves") { showMoves = true }.font(.subheadline).frame(minHeight: 44)
-                                }
-                                ProgressView(value: Double(max(0, scene.playback.completedMoveCount - visibleMoves.lowerBound)), total: Double(visibleMoves.count))
-                                    .accessibilityLabel("Progress through this stage")
-                            }
-                        }
+                        if !solution.moves.isEmpty && teachingPlan == nil { stepStrip }
                         }
                     }.cubeDrawer()
                 }.frame(maxWidth: 700).frame(maxWidth: .infinity)
@@ -131,11 +101,14 @@ struct ManualSolutionView: View {
                     Button("How to hold my cube") { scene.resetView(); showHoldingHelp = true }
                     Toggle("Slow motion", isOn: $scene.slow).disabled(scene.playback.isBusy)
                     Button("Replay last move") { scene.replay() }.disabled(goalScene != nil || showPiece || scene.playback.lastTurn == nil || scene.playback.isBusy)
-                    if teachingPlan != nil { Toggle("Try without animation", isOn: $withoutAnimation).disabled(scene.playback.isBusy) }
+                    if teachingPlan != nil {
+                        Toggle("I’ll turn first, then tap", isOn: $withoutAnimation).disabled(scene.playback.isBusy)
+                        Button("Show turns as notation") { showMoves = true }
+                    }
                     if teachingPlan == nil {
                         Button("Play all moves") { scene.playSolution() }.disabled(scene.playback.isBusy || scene.playback.nextMove == nil)
                     }
-                    Button("Restart solution") { showPiece = false; goalScene = nil; checkpoint = nil; showCheckpoint = false; scene.restartSolution(); presentGoal() }
+                    Button("Restart solution") { showPiece = false; goalScene = nil; checkpoint = nil; scene.restartSolution(); presentGoal() }
                 } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Playback options")
             }
         }
@@ -143,7 +116,7 @@ struct ManualSolutionView: View {
         .onChange(of: scene.playback.completedMoveCount) { old, count in
             guard count > old, let plan = teachingPlan, let completed = plan.lesson(at: count - 1),
                   plan.lesson(at: count)?.stage != completed.stage else { return }
-            checkpoint = completed.stage; showCheckpoint = true
+            checkpoint = completed.stage
         }
         .onChange(of: showPiece) { _, inspecting in
             scene.showsTurnGuide = !inspecting
@@ -151,16 +124,9 @@ struct ManualSolutionView: View {
             scene.destinationHighlights = inspecting ? Set(lesson?.piece?.destinationIndices ?? []) : []
             scene.refreshHighlights()
         }
-        .sheet(isPresented: $showCheckpoint, onDismiss: { if checkpoint != nil && !scene.playback.isSolutionComplete { presentGoal() }; checkpoint = nil }) {
-            VStack(alignment: .leading, spacing: 20) {
-                Image(systemName: "checkmark.circle.fill").font(.largeTitle).foregroundStyle(.green)
-                Text(scene.playback.isSolutionComplete ? "You solved your cube." : "Pause and check your cube.").font(.title2.bold())
-                Text(scene.playback.isSolutionComplete ? "All six faces should match their centers." : checkpoint?.goal ?? "Check that your cube matches the model.")
-                Text("Does your cube match? If not, go back through the last moves.")
-                    .foregroundStyle(.secondary)
-                Button("My cube matches") { showCheckpoint = false }.frame(maxWidth: .infinity).buttonStyle(CubePrimaryButton())
-                Button("Let me check the last moves") { checkpoint = nil; showCheckpoint = false }.frame(maxWidth: .infinity, minHeight: 44)
-            }.padding(24).presentationDetents([.medium, .large]).environment(\.colorScheme, .light)
+        .sheet(item: $checkpoint, onDismiss: { if !retracing && !scene.playback.isSolutionComplete { presentGoal() }; retracing = false }) { stage in
+            ScrollView { checkpointCard(stage).padding(24) }
+                .presentationDetents([.large]).presentationBackground(Color(uiColor: .systemBackground))
         }
         .sheet(isPresented: $showWhy) {
             NavigationStack {
@@ -169,27 +135,35 @@ struct ManualSolutionView: View {
                         VStack(alignment: .leading, spacing: 20) {
                             Text(lesson.name).font(.title2.bold())
                             Text(lesson.explanation)
-                            Text("Finish the whole pattern. Earlier layers may look mixed partway through.").foregroundStyle(.secondary)
+                            if !lesson.isSetupOnly && lesson.stage != .cross {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Say it as you turn").font(.headline)
+                                    Text(solution.moves[lesson.patternRange].map(\.shortLabel).joined(separator: "  ·  "))
+                                        .font(.body.weight(.semibold))
+                                    Text("Saying the pattern out loud is how most people learn it. After a few solves your hands will remember it on their own.")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }.padding(24)
                     }
-                }.navigationTitle("Why this works").navigationBarTitleDisplayMode(.inline)
+                }.navigationTitle("How this works").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showWhy = false } } }
-            }.presentationDetents([.medium, .large]).environment(\.colorScheme, .light)
+            }.presentationDetents([.medium, .large]).presentationBackground(Color(uiColor: .systemBackground))
         }
         .sheet(isPresented: $showMoves) {
             NavigationStack {
                 ScrollView { stepStrip.padding(24) }
-                    .navigationTitle("Moves in this stage").navigationBarTitleDisplayMode(.inline)
+                    .navigationTitle(teachingPlan == nil ? "Moves in this stage" : "This goal in notation").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showMoves = false } } }
-            }.presentationDetents([.medium, .large]).environment(\.colorScheme, .light)
+            }.presentationDetents([.medium, .large]).presentationBackground(Color(uiColor: .systemBackground))
         }
         .sheet(isPresented: $showHoldingHelp) {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Keep your bearings").font(.title2.bold())
                 Text(holdingInstruction(for: solution.initialCube)).font(.headline)
-                Text("The letter on each center names that face. Dragging the model only changes your view. Tap Reset view to return to this holding position.")
-                Button("Got it") { showHoldingHelp = false }.frame(maxWidth: .infinity).buttonStyle(CubePrimaryButton())
-            }.padding(24).presentationDetents([.medium, .large]).environment(\.colorScheme, .light)
+                Text("Every turn I describe — “right side up”, “top layer to the left” — assumes you’re holding it this way. Dragging the model only changes your view, not your cube. Tap the frame button to snap back.")
+                Button { showHoldingHelp = false } label: { Text("Got it").frame(maxWidth: .infinity) }.buttonStyle(CubePrimaryButton())
+            }.padding(24).presentationDetents([.medium, .large]).presentationBackground(Color(uiColor: .systemBackground))
         }
         .onChange(of: scene.playback.isSolutionComplete) { _, complete in if complete { onComplete() } }
         .onChange(of: scenePhase) { _, phase in if phase != .active { scene.cancel() } }
@@ -198,10 +172,10 @@ struct ManualSolutionView: View {
 
     @ViewBuilder private var playbackControls: some View {
         if goalScene != nil {
-            Button { goalScene = nil } label: { Text("Back to my cube").frame(maxWidth: .infinity) }
+            Button { goalScene = nil } label: { Text(teachingPlan != nil && atStageStart ? "I’m ready — let’s go" : "Back to my cube").frame(maxWidth: .infinity) }
                 .buttonStyle(CubePrimaryButton())
         } else if showPiece {
-            Button { showPiece = false } label: { Text("Back to the moves").frame(maxWidth: .infinity) }
+            Button { showPiece = false } label: { Text("Found it — back to the turns").frame(maxWidth: .infinity) }
                 .buttonStyle(CubePrimaryButton())
         } else {
             HStack(spacing: 12) {
@@ -216,9 +190,15 @@ struct ManualSolutionView: View {
                     Button {
                         if withoutAnimation { scene.confirmNextWithoutAnimation() } else { scene.nextStep() }
                     } label: {
-                        Text(withoutAnimation ? "I did this move" : teachingPlan == nil ? "Show next move" : "Show this move")
+                        Text(withoutAnimation ? "I did it — next turn" : teachingPlan == nil ? "Show next move" : "Show me this turn")
                             .frame(maxWidth: .infinity)
                     }.buttonStyle(CubePrimaryButton())
+                    if teachingPlan != nil {
+                        Button { scene.replay() } label: {
+                            Image(systemName: "arrow.counterclockwise").frame(width: 48, height: 52)
+                        }.disabled(scene.playback.lastTurn == nil || scene.isAutoPlaying)
+                            .accessibilityLabel("Watch the last turn again")
+                    }
                 } else {
                     Text("All steps completed").frame(maxWidth: .infinity).font(.headline)
                 }
@@ -227,23 +207,146 @@ struct ManualSolutionView: View {
     }
 
     private func pieceExplanation(_ piece: TeachingPiece) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Find this \(piece.colors.count == 2 ? "edge" : "corner")").font(.title2.bold())
+        let kind = piece.colors.count == 2 ? "edge" : "corner"
+        let home = Set(piece.currentIndices(in: scene.playback.cube)) == Set(piece.destinationIndices)
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Find this \(kind)").font(.title2.bold())
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) { ForEach(piece.colors, id: \.self) { LearningColorCue(color: $0, caption: "") } }
                 VStack(alignment: .leading, spacing: 10) { ForEach(piece.colors, id: \.self) { LearningColorCue(color: $0, caption: "") } }
             }
-            Label("White outline: the piece", systemImage: "viewfinder").font(.subheadline.bold())
+            Label("White outline: where it is now", systemImage: "viewfinder").font(.subheadline.bold())
                 .accessibilityHint("On the \(piece.currentIndices(in: scene.playback.cube).map { CubeFaceID(rawValue: $0 / 9)!.title.lowercased() }.joined(separator: ", ")) faces")
-            if Set(piece.currentIndices(in: scene.playback.cube)) == Set(piece.destinationIndices) {
-                Text("It’s home. Now its colors need to face the matching centers.").font(.subheadline)
+            if home {
+                Text("It’s already in its spot, just turned the wrong way. These turns will flip it so each color faces its matching center.").font(.subheadline)
             } else {
-                Label("Blue outline: where it belongs", systemImage: "scope").font(.subheadline.bold())
+                Label("Blue outline: where it’s going", systemImage: "scope").font(.subheadline.bold())
                     .accessibilityHint("Between the \(piece.destinationFaces.map { $0.title.lowercased() }.joined(separator: ", ")) centers")
+                Text("Its home is between the \(piece.destinationFaces.map { "\(solution.initialCube.centerColors[$0.rawValue].name)" }.joined(separator: " and ")) centers.")
+                    .font(.subheadline)
             }
-            Text("Drag to find it. Match each color to its center.").font(.subheadline).foregroundStyle(Color(white: 0.35))
+            Text("Now find the same piece on the cube in your hands. Drag the model if it’s hidden around the back.")
+                .font(.subheadline).foregroundStyle(Color(white: 0.35))
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private var coach: CoachColors { CoachColors(cube: solution.initialCube) }
+    private var moveIndex: Int { scene.playback.currentStepIndex ?? scene.playback.completedMoveCount }
+    private var atStageStart: Bool { moveIndex == visibleMoves.lowerBound }
+
+    private func goalBriefing(_ stage: BeginnerStage) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(stage.introduction(coach)).font(.body).fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "lightbulb.fill").foregroundStyle(.orange).accessibilityHidden(true)
+                Text(stage.tip(coach)).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityElement(children: .combine).accessibilityLabel("Tip: \(stage.tip(coach))")
+            VStack(alignment: .leading, spacing: 4) {
+                Text("You’re done when…").font(.subheadline.bold())
+                Text(stage.doneWhen(coach)).font(.subheadline).foregroundStyle(Color(white: 0.35)).fixedSize(horizontal: false, vertical: true)
+            }
+            Label("The model shows your cube after this goal. Drag to look around.", systemImage: "hand.draw")
+                .font(.caption).foregroundStyle(Color(white: 0.35))
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private func teachingStep(_ lesson: BeginnerLesson, move: CubeMove) -> some View {
+        let firstTurn = moveIndex == lesson.moveRange.lowerBound && !scene.playback.isBusy
+        VStack(alignment: .leading, spacing: 6) {
+            Text(lesson.headline(coach)).font(.headline)
+            if firstTurn {
+                Text(lesson.coaching(coach)).font(.subheadline).foregroundStyle(Color(white: 0.35))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: move.directionSymbol)
+                .font(.title.bold()).foregroundStyle(.white).frame(width: 56, height: 56)
+                .background(CubeStyle.action, in: RoundedRectangle(cornerRadius: 16))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(scene.playback.activeTurn?.isBackward == true ? "Undoing: \(move.spokenInstruction.lowercased())" : move.spokenInstruction)
+                    .font(.title3.bold()).fixedSize(horizontal: false, vertical: true)
+                Text(move.handHint).font(.caption).foregroundStyle(Color(white: 0.35))
+                LearningColorCue(color: solution.initialCube.centerColors[move.face.rawValue], caption: "center on that side")
+                    .scaleEffect(0.85, anchor: .leading)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityElement(children: .combine).accessibilityIdentifier("currentSolutionStep")
+        patternChips(lesson)
+        HStack {
+            if lesson.piece != nil {
+                Button("Find the piece", systemImage: "viewfinder") { showPiece = true }
+            }
+            Spacer()
+            Button("See the goal", systemImage: "scope") { presentGoal() }
+            Spacer()
+            Button("How it works", systemImage: "questionmark.circle") { showWhy = true }
+        }.font(.subheadline).labelStyle(.titleOnly).frame(minHeight: 44).disabled(scene.playback.isBusy)
+        ProgressView(value: Double(max(0, scene.playback.completedMoveCount - visibleMoves.lowerBound)), total: Double(visibleMoves.count))
+            .accessibilityLabel("Progress through this goal")
+    }
+
+    /// The lesson's turns at a glance, so the pattern can be learned as a phrase rather than a list.
+    private func patternChips(_ lesson: BeginnerLesson) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(lesson.phase(of: min(moveIndex, lesson.moveRange.upperBound - 1)))
+                .font(.caption.weight(.semibold)).foregroundStyle(Color(white: 0.35))
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(lesson.moveRange, id: \.self) { index in
+                            let current = index == moveIndex
+                            let done = index < scene.playback.completedMoveCount && !current
+                            let setup = index < lesson.patternRange.lowerBound
+                            Text(solution.moves[index].shortLabel)
+                                .font(.subheadline.weight(current ? .bold : .regular))
+                                .padding(.horizontal, 10).frame(minHeight: 34)
+                                .background(current ? CubeStyle.action : Color.secondary.opacity(setup ? 0.06 : 0.12), in: Capsule())
+                                .overlay { if setup && !current { Capsule().strokeBorder(Color.secondary.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [3])) } }
+                                .foregroundStyle(current ? Color.white : done ? Color.secondary : Color.primary)
+                                .id(index)
+                        }
+                    }
+                }
+                .onChange(of: moveIndex, initial: true) { _, index in proxy.scrollTo(index, anchor: .center) }
+            }
+        }.accessibilityElement(children: .ignore)
+            .accessibilityLabel("Turns for this piece: \(solution.moves[lesson.moveRange].map(\.spokenInstruction).joined(separator: ", "))")
+    }
+
+    @ViewBuilder private func checkpointCard(_ stage: BeginnerStage) -> some View {
+        let done: BeginnerStage? = scene.playback.isSolutionComplete ? .topEdges : stage
+        VStack(alignment: .leading, spacing: 18) {
+            Image(systemName: scene.playback.isSolutionComplete ? "star.circle.fill" : "checkmark.circle.fill")
+                .font(.system(size: 44)).foregroundStyle(scene.playback.isSolutionComplete ? .orange : .green)
+            if let done {
+                Text(scene.playback.isSolutionComplete ? BeginnerStage.topEdges.celebration : done.celebration).font(.title2.bold())
+                Text(scene.playback.isSolutionComplete ? BeginnerStage.topEdges.encouragement : done.encouragement)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Check the cube in your hands").font(.headline)
+                    Text(done.doneWhen(coach)).foregroundStyle(.secondary)
+                }
+                if !scene.playback.isSolutionComplete, let next = nextStage {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Up next · Goal \(next.number)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(next.headline(coach)).font(.headline)
+                    }
+                }
+            }
+            Button { checkpoint = nil } label: {
+                Text(scene.playback.isSolutionComplete ? "Done" : "Yes, my cube matches").frame(maxWidth: .infinity)
+            }.buttonStyle(CubePrimaryButton())
+            if !scene.playback.isSolutionComplete {
+                Button("Not quite — let me retrace") { retracing = true; checkpoint = nil }.frame(maxWidth: .infinity, minHeight: 44)
+                Text("No problem if it doesn’t match. Step back with ◀︎ and redo the last few turns slowly, watching each one first.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var nextStage: BeginnerStage? { teachingPlan?.lesson(at: scene.playback.completedMoveCount)?.stage }
 
     private func presentGoal() {
         guard let plan = teachingPlan, let lesson, !scene.playback.isBusy,

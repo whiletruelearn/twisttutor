@@ -34,6 +34,12 @@ public struct BeginnerLesson: Equatable, Sendable {
     public let explanation: String
     public let moveRange: Range<Int>
     public let piece: TeachingPiece?
+    /// Leading top-layer turns that park the piece before the pattern begins.
+    public let setupMoveCount: Int
+    public var patternRange: Range<Int> { (moveRange.lowerBound + setupMoveCount)..<moveRange.upperBound }
+    public var isSetupOnly: Bool { setupMoveCount == moveRange.count }
+    /// False when this lesson only frees a stuck piece so a later lesson can place it.
+    public let placesPiece: Bool
 }
 
 public struct BeginnerPlan: Equatable, Sendable {
@@ -70,14 +76,19 @@ public struct BeginnerSolver: Sendable {
                     path = try TeachingSearch.forward(initial, stage: stage, algorithms: algorithms, pieces: projection, deadline: deadline)
                 }
                 if path.isEmpty { complete.append(stage) }
-                for index in path {
-                    let algorithm = algorithms[index]
+                // A teacher works one piece at a time: group the turns that place each piece,
+                // including the top-layer turns that line it up, into a single lesson.
+                for group in TeachingSearch.lessonGroups(path, stage: stage, algorithms: algorithms, from: state) {
                     let start = moves.count
-                    let next = state.applying(algorithm.moves)
-                    let piece = TeachingSearch.targetPiece(stage: stage, before: state, after: next, cube: cube.applying(moves))
-                    moves += algorithm.moves
+                    let groupMoves = group.flatMap { algorithms[$0].moves }
+                    let next = state.applying(groupMoves)
+                    let (piece, places) = TeachingSearch.targetPiece(stage: stage, before: state, after: next, cube: cube.applying(moves))
+                    let setup = group.prefix { algorithms[$0].isSetup }.reduce(0) { $0 + algorithms[$1].moves.count }
+                    let pattern = algorithms[group.first { !algorithms[$0].isSetup } ?? group[0]]
+                    moves += groupMoves
                     state = next
-                    lessons.append(BeginnerLesson(stage: stage, name: algorithm.name, explanation: algorithm.why, moveRange: start..<moves.count, piece: piece))
+                    lessons.append(BeginnerLesson(stage: stage, name: pattern.name, explanation: pattern.why, moveRange: start..<moves.count,
+                                                  piece: piece, setupMoveCount: stage == .cross ? 0 : setup, placesPiece: places))
                 }
                 // Verify every milestone on the full state, including all earlier layers.
                 guard TeachingSearch.milestone(stage, state) else { throw SolverError.verificationFailed }
@@ -100,8 +111,10 @@ private enum TeachingSearch {
         let why: String
         let edges: [UInt64]
         let corners: [UInt64]
+        let isSetup: Bool
         init(_ moves: [CubeMove], _ name: String, _ why: String) {
             self.moves = moves; self.name = name; self.why = why
+            isSetup = moves.count == 1 && moves[0].face == .up
             let effect = CubieState.solved.applying(moves)
             var edges = [UInt64](repeating: 0, count: 24)
             var corners = edges
@@ -143,20 +156,20 @@ private enum TeachingSearch {
     }
     static func algorithms(for stage: BeginnerStage) -> [Algorithm] {
         if stage == .cross {
-            return CubeFaceID.allCases.flatMap { face in TurnAmount.allCases.map { Algorithm([CubeMove(face, $0)], "Build the cross", "Bring bottom-color edges around the bottom center, then line up their side colors. We may move an edge away briefly to put it back correctly.") } }
+            return CubeFaceID.allCases.flatMap { face in TurnAmount.allCases.map { Algorithm([CubeMove(face, $0)], "Build the cross", "There’s no fixed pattern for the cross — you steer each edge with single turns. Sometimes an edge has to step out of the way and come back flipped, so its side color lines up with the right center.") } }
         }
         var result: [Algorithm] = []
         if stage != .topEdges {
-            result += TurnAmount.allCases.map { Algorithm([CubeMove(.up, $0)], "Line up the top layer", "Turn only the top layer to put the next pieces in position. Keep holding the cube with the same front and top.") }
+            result += TurnAmount.allCases.map { Algorithm([CubeMove(.up, $0)], "Line up the top layer", "Turning only the top layer never disturbs what you’ve already built below, so it’s the safe way to move pieces into position.") }
         }
         let recipe: (String, String, String)
         switch stage {
-        case .firstCorners: recipe = ("R U R'", "Insert a bottom corner", "Open a side, move the top, then close the side. Repeating this short pattern places and turns bottom corners while keeping the cross together.")
-        case .middleEdges: recipe = ("U R U' R' U' F' U F", "Insert a middle edge", "Move the edge away, open a space, and bring it into the middle layer. The first layer is restored when this whole pattern finishes.")
-        case .topCross: recipe = ("F R U R' U' F'", "Turn the top edges", "Open the indicated side, do a four-turn trigger, and close that side. This flips top edges while restoring the two finished layers.")
-        case .topFace: recipe = ("R U R' U R U2 R'", "Turn the top corners", "This seven-move pattern turns top corners while keeping the top cross. It may need to be repeated from another side.")
-        case .topCorners: recipe = ("R U R' U' R' F R2 U' R' U' R U R' F'", "Swap top corners", "This pattern exchanges two top corners and two top edges. The finished colors and bottom two layers return at the end.")
-        case .topEdges: recipe = ("R U' R U R U R U' R' U' R2", "Cycle the last edges", "Move three top edges around the top while keeping all corners in place. The finished layers return at the end of the pattern.")
+        case .firstCorners: recipe = ("R U R'", "Insert a bottom corner", "The pattern lifts a bottom gap up, swings the corner over it, then lowers the side back down. Because the side goes back where it started, your cross stays safe. If the corner comes in twisted, repeating the pattern turns it a little more each time.")
+        case .middleEdges: recipe = ("U R U' R' U' F' U F", "Insert a middle edge", "The first half moves the edge out of the way and opens a slot. The second half lowers the edge into that slot and repairs the bottom layer. That’s why the bottom looks broken mid-way: the pattern borrows it and gives it back.")
+        case .topCross: recipe = ("F R U R' U' F'", "Turn the top edges", "Turning the front face first tucks two top edges sideways. The four turns in the middle shuffle them, and turning the front back brings them up flipped. Your finished layers return untouched.")
+        case .topFace: recipe = ("R U R' U R U2 R'", "Turn the top corners", "This seven-turn pattern twists three top corners in place and leaves the cross alone. Doing it again from another side keeps twisting until every corner shows the top color.")
+        case .topCorners: recipe = ("R U R' U' R' F R2 U' R' U' R U R' F'", "Swap top corners", "This longer pattern swaps two neighboring top corners (and two edges along the way). Everything else — including the top color — ends up exactly where it was.")
+        case .topEdges: recipe = ("R U' R U R U R U' R' U' R2", "Cycle the last edges", "This pattern carries three top edges around in a little loop while every corner stays still. Run it once or twice and each edge lands next to its matching center.")
         default: preconditionFailure()
         }
         let sides: [CubeFaceID] = [.front, .right, .back, .left]
@@ -171,21 +184,57 @@ private enum TeachingSearch {
         }
         return result
     }
-    static func targetPiece(stage: BeginnerStage, before: CubieState, after: CubieState, cube: CubeState) -> TeachingPiece? {
+    static func lessonGroups(_ path: [Int], stage: BeginnerStage, algorithms: [Algorithm], from start: CubieState) -> [[Int]] {
+        var groups: [[Int]] = []
+        var current: [Int] = []
+        var state = start
+        let pieces = projection(for: stage)
+        func placedCount(_ state: CubieState) -> Int {
+            pieces.filter { piece in
+                piece.corner ? state.cornerPermutation[piece.id] == piece.id && state.cornerOrientation[piece.id] == 0
+                    : state.edgePermutation[piece.id] == piece.id && state.edgeOrientation[piece.id] == 0
+            }.count
+        }
+        var placed = placedCount(state)
+        for index in path {
+            current.append(index)
+            if stage == .cross || stage == .firstCorners {
+                // One lesson per piece. It ends as soon as one more piece is home,
+                // even when that takes a repeated corner pattern.
+                state = state.applying(algorithms[index].moves)
+                let count = placedCount(state)
+                if count > placed { groups.append(current); current = []; placed = count }
+            } else if !algorithms[index].isSetup {
+                groups.append(current); current = []
+            }
+        }
+        if !current.isEmpty { groups.append(current) }
+        return groups
+    }
+    static func targetPiece(stage: BeginnerStage, before: CubieState, after: CubieState, cube: CubeState) -> (TeachingPiece?, Bool) {
         let candidates: [Piece]
         switch stage {
         case .cross: candidates = (4..<8).map { Piece(corner: false, id: $0) }
         case .firstCorners: candidates = (4..<8).map { Piece(corner: true, id: $0) }
         case .middleEdges: candidates = (8..<12).map { Piece(corner: false, id: $0) }
-        case .topCross, .topEdges: candidates = (0..<4).map { Piece(corner: false, id: $0) }
-        case .topFace, .topCorners: candidates = (0..<4).map { Piece(corner: true, id: $0) }
+        case .topEdges: candidates = (0..<4).map { Piece(corner: false, id: $0) }
+        case .topCorners: candidates = (0..<4).map { Piece(corner: true, id: $0) }
+        // These patterns change the whole top at once; there is no single piece to follow.
+        case .topCross, .topFace: return (nil, true)
         }
         func solved(_ piece: Piece, in state: CubieState) -> Bool {
             piece.corner ? state.cornerPermutation[piece.id] == piece.id && state.cornerOrientation[piece.id] == 0
                 : state.edgePermutation[piece.id] == piece.id && state.edgeOrientation[piece.id] == 0
         }
         let unsolved = candidates.filter { !solved($0, in: before) }
-        guard let target = unsolved.first(where: { solved($0, in: after) }) ?? unsolved.first else { return nil }
+        let placed = unsolved.first { solved($0, in: after) }
+        // A pattern that places nothing has lifted a stuck piece out of its layer onto the top.
+        let lifted = unsolved.first { piece in
+            let from = (piece.corner ? before.cornerPermutation : before.edgePermutation).firstIndex(of: piece.id)!
+            let to = (piece.corner ? after.cornerPermutation : after.edgePermutation).firstIndex(of: piece.id)!
+            return from >= 4 && to < 4
+        }
+        guard let target = placed ?? lifted ?? unsolved.first else { return (nil, true) }
         let permutation = target.corner ? before.cornerPermutation : before.edgePermutation
         let source = permutation.firstIndex(of: target.id)!
         let destinationFaces = target.corner ? CornerID(rawValue: target.id)!.faces : EdgeID(rawValue: target.id)!.faces
@@ -194,9 +243,9 @@ private enum TeachingSearch {
             let position = faces.reduce(SIMD3<Float>.zero) { $0 + CubeRenderLayout.axis(for: $1) }
             return CubeRenderLayout.facelets.filter { $0.position == position }.map(\.index)
         }
-        return TeachingPiece(colors: destinationFaces.map { cube.centerColors[$0.rawValue] },
-                             stickerIDs: indices(sourceFaces).map { cube.stickers[$0].id },
-                             destinationIndices: indices(destinationFaces), destinationFaces: destinationFaces)
+        return (TeachingPiece(colors: destinationFaces.map { cube.centerColors[$0.rawValue] },
+                              stickerIDs: indices(sourceFaces).map { cube.stickers[$0].id },
+                              destinationIndices: indices(destinationFaces), destinationFaces: destinationFaces), placed != nil || stage.rawValue >= 3)
     }
 
     struct Link { let parent: UInt64; let action: Int }
