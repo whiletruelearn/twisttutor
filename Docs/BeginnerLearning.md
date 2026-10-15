@@ -2,7 +2,7 @@
 
 ## Method
 
-Learn uses the user's manually entered cube, shared with Solve during the current app session. The introductory screen explains centers, edges, corners, notation and the actual front/top center colors. A practice cube is explicit and replacement of entered colors requires confirmation.
+Learn uses the user's manually entered cube, shared with Solve during the current app session. The introductory screen shows the actual front/top center colors and lets learners select Centers, Edges or Corners to highlight an example directly on their cube. A practice cube is explicit and replacement of entered colors requires confirmation.
 
 `BeginnerSolver` is independent of `QuickSolver`. It builds the bottom cross, bottom corners, middle edges, top cross, top color, top corner positions and top edge positions. Bottom/top refer to the user's established orientation, never hardcoded white/yellow faces.
 
@@ -22,7 +22,7 @@ Every milestone is checked on the complete cubie state. The full sequence then p
 
 Four native tabs: Solve cube, Learn, Time solving and Settings. The standalone Just explore entry is removed. Top/bottom painting uses the existing oblique 3D view. The separate neighboring-color strip was removed at the user’s request. The main hint directs users to Inspect.
 
-Learning introduces one pattern at a time, with a stage goal, expandable reason, move notation and plain-language color-based instruction. The fixed bottom tray holds previous/next controls. At stage boundaries the user checks their physical cube. A cube finished during an early stage gets the full completion message. Piece inspection reuses the existing live cube, with white source and blue destination outlines. Replay, slow motion and an optional “I did this move” mode support practice without first watching an animation.
+Learning starts with an interactive 3D goal preview computed from the end of the current stage in the verified plan. This is explicitly labeled as a preview and does not advance playback. Returning to the current cube shows one color-based turn instruction and progress through the stage. “See goal,” “Find piece,” “Why?” and “All moves” reveal supporting information on demand; the main screen does not require reading notation. The move sequence remains available with its current/completed indicators. The fixed bottom tray holds previous/next controls. At stage boundaries the user checks their physical cube. A cube finished during an early stage gets the full completion message. Piece inspection reuses the existing live cube, with white source and blue destination outlines. Replay, slow motion and an optional “I did this move” mode support practice without first watching an animation.
 
 The manual timer stores the most recent 100 times locally, displays 10 recent results, and keeps an all-time personal best separately. It prevents automatic screen sleep while timing. Backgrounding or leaving the timer discards an unfinished attempt, with an explanation on return. Settings stores slow-animation preference and confirms clearing timer history/best. Cube entry and lesson progress are not yet persisted across app termination (ENG-621 remains broader follow-up scope).
 
@@ -52,3 +52,11 @@ The review clears these defects; it does not establish end-to-end or device vali
 3. Start the lesson, inspect a piece, orbit, return, advance and go back. Confirm the displayed face/arrow and physical moves agree.
 4. Follow a complete lesson and compare at every milestone. Also try a cube one bottom turn from solved to check the early completion message.
 5. Start/stop the timer, relaunch to check saved times, interrupt an attempt, and verify clearing history and animation-speed settings.
+
+## Visual learning refinement — 15 October 2026
+
+Removed the seven-row roadmap from Learn home, the dense notation/definition introduction, and the always-visible pattern explanation and move strip. Their jobs are now handled by the interactive introduction, stage goal preview, optional explanation and optional stage sequence. The underlying beginner solver and move playback engine are unchanged.
+
+The stage preview uses a separate cube scene replayed from the verified solution’s initial state through the last move of that stage. Showing and dismissing it cannot change the learner’s current cube. At checkpoints, confirming or dismissing advances to a preview of the next available stage; choosing to check the last moves keeps the playback screen.
+
+Validation: simulator build and all 3 focused playback regression tests passed. `Docs/Design/Screens/visual-learning/move.png` records the compact move screen. Simulator checks covered the practice-cube route, centers/edge highlighting, first-stage preview, returning without advancing, next move and previous move. Full lesson completion, later-stage transitions, iPad, accessibility sizes, VoiceOver and physical-device learning remain manual checks.
