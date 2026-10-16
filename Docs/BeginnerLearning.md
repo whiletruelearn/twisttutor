@@ -60,3 +60,16 @@ Removed the seven-row roadmap from Learn home, the dense notation/definition int
 The stage preview uses a separate cube scene replayed from the verified solution’s initial state through the last move of that stage. Showing and dismissing it cannot change the learner’s current cube. At checkpoints, confirming or dismissing advances to a preview of the next available stage; choosing to check the last moves keeps the playback screen.
 
 Validation: simulator build and all 3 focused playback regression tests passed. `Docs/Design/Screens/visual-learning/move.png` records the compact move screen. Simulator checks covered the practice-cube route, centers/edge highlighting, first-stage preview, returning without advancing, next move and previous move. Full lesson completion, later-stage transitions, iPad, accessibility sizes, VoiceOver and physical-device learning remain manual checks.
+
+## Teacher-style lessons — 15 October 2026
+
+Learn now follows how a person would teach the cube across a table.
+
+- **Meet your cube (lesson 0):** five short pages. Hold the cube (centers never move), edges have two colors, corners have three, how turns are described (with the on-cube arrow), and the plan: bottom, middle and top layers.
+- **Goal briefing:** each of the seven goals opens with what we're making and why, one tip for the mistake beginners usually make, and "you're done when…" written for the cube in your hands. All wording uses the learner's own center colors.
+- **One piece per lesson:** the solver now groups turns by teaching intent (`BeginnerLesson.setupMoveCount`, `placesPiece`). Cross and first-layer corners get one lesson per piece placed, including repeated corner triggers. Middle edges get one lesson per pattern, and a pattern that frees a stuck edge is taught as "Lift out the … edge". Last-layer stages get one lesson per pattern, with leading top-layer alignment shown as "Get ready".
+- **Turns in hand words:** `CubeMove.spokenInstruction` / `handHint` / `shortLabel` ("Turn the right side up", "Top ←"). `testSpokenDirectionsMatchGeometry` checks them against the cube geometry. Notation is still available from the ⋯ menu.
+- **Checkpoints:** celebrate, ask the learner to check the physical cube, preview the next goal, and give recovery advice when it doesn't match.
+- Copy lives in `CubeSolver/BeginnerCoaching.swift`.
+
+Validation: 81 package tests passed, including coaching tests and a check that the practice cube exercises all seven goals. The simulator build passed. Static simulator screenshots (via a temporary debug launch hook, since removed) covered intro pages, goal briefing, corner and middle lessons, and the checkpoint, plus the checkpoint, "How it works" and holding-help sheets in dark mode (sheets now follow the system appearance on a solid background, and the checkpoint sheet is driven by its stage item). Tapping through a full lesson, VoiceOver, Dynamic Type and physical-device checks were not done.

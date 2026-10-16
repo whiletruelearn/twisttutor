@@ -120,14 +120,16 @@ private struct LearnHomeView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24)
                     CubeViewport(scene: scene).frame(height: 240).accessibilityLabel("Your learning cube. Drag to inspect.")
                     VStack(alignment: .leading, spacing: 16) {
-                        Text(entry.canSolve ? "Your colors. Your lesson." : "Start with the cube in your hands.").font(.title2.bold())
-                        Text("See the goal. Follow a move. Try it on your cube.")
-                            .foregroundStyle(Color(white: 0.35))
+                        Text(entry.canSolve ? "Ready when you are." : "Start with the cube in your hands.").font(.title2.bold())
+                        Text(entry.canSolve
+                             ? "I’ll teach you the beginner method on this exact cube: seven small goals, one piece at a time. No notation to memorize."
+                             : "Tell me your cube’s colors and I’ll teach you to solve it, step by step. Or practise on a mixed-up cube first.")
+                            .foregroundStyle(Color(white: 0.35)).fixedSize(horizontal: false, vertical: true)
                         if planning != nil {
                             ProgressView("Preparing your lesson…")
                             Button("Cancel") { cancelPlanning() }.frame(minHeight: 44)
                         } else if entry.canSolve {
-                            Button("Learn with this cube") { prepareLesson() }.frame(maxWidth: .infinity).buttonStyle(CubePrimaryButton())
+                            Button { prepareLesson() } label: { Text("Teach me with this cube").frame(maxWidth: .infinity) }.buttonStyle(CubePrimaryButton())
                         }
                         NavigationLink { ManualEntryView(entry: entry, forLearning: true) } label: {
                             Label(entry.filledCount == 0 ? "Enter my cube’s colors" : "Edit my cube’s colors", systemImage: "paintpalette")
@@ -159,8 +161,10 @@ private struct LearnHomeView: View {
     }
     private func updatePreview() { scene.showsTurnGuide = false; scene.showEntry(entry.stickers.map { $0?.colorID }) }
     private func loadExample() {
-        entry.load(try! CubeState.solved().applying(MoveNotation.parse("R U R' U' F2 D L2 B")))
+        // Mixed enough that every one of the seven goals has something to teach.
+        entry.load(try! CubeState.solved().applying(MoveNotation.parse(Self.practiceScramble)))
     }
+    static let practiceScramble = "D2 F' R U2 L B2 D' R2 F L' U B' R2 D F2 U' L2 B R'"
     private func cancelPlanning() { planning?.cancel(); planning = nil }
     private func prepareLesson() {
         guard planning == nil, entry.canSolve, let cube = entry.cube else { return }
@@ -190,47 +194,48 @@ struct LearningColorCue: View {
     }
 }
 
+/// A five-page first lesson, the way a teacher would hand you a cube for the first time:
+/// how to hold it, the three kinds of pieces, how turns are described, and the plan.
 private struct LearningIntroduction: View {
     let plan: BeginnerPlan
     @State private var scene: CubeScene
-    @State private var selected = 0
+    @State private var page = 0
+    private let pages = 5
     init(plan: BeginnerPlan) {
         self.plan = plan
         let scene = CubeScene(cube: plan.solution.initialCube)
         scene.showsTurnGuide = false
         _scene = State(initialValue: scene)
     }
+    private var cube: CubeState { plan.solution.initialCube }
+    private var colors: CoachColors { CoachColors(cube: cube) }
+    private var front: CubeColorID { cube.centerColors[CubeFaceID.front.rawValue] }
+
     var body: some View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 16) {
-                    Text(["Hold your cube like this", "Find a two-color edge", "Find a three-color corner"][selected])
-                        .font(.title2.bold()).fontDesign(.rounded).padding(.horizontal, 24)
-                    CubeViewport(scene: scene).frame(height: max(260, geometry.size.height - 330))
+                    VStack(spacing: 6) {
+                        Text("Lesson 0 · \(page + 1) of \(pages)").font(.caption.weight(.semibold)).foregroundStyle(CubeStyle.secondary)
+                        Text(title).font(.title2.bold()).fontDesign(.rounded).multilineTextAlignment(.center)
+                    }.padding(.horizontal, 24)
+                    CubeViewport(scene: scene).frame(height: max(200, geometry.size.height - (page == pages - 1 ? 560 : 440)))
                     VStack(alignment: .leading, spacing: 16) {
-                        Picker("Explore the pieces", selection: $selected) {
-                            Text("Centers").tag(0)
-                            Text("Edges").tag(1)
-                            Text("Corners").tag(2)
-                        }.pickerStyle(.segmented)
-                        if selected == 0 {
-                            ViewThatFits(in: .horizontal) {
-                                HStack(spacing: 20) { holdingColors }
-                                VStack(alignment: .leading, spacing: 12) { holdingColors }
+                        pageContent
+                        HStack(spacing: 12) {
+                            if page > 0 {
+                                Button("Back") { page -= 1 }.frame(minWidth: 72, minHeight: 52)
                             }
-                            Text("Keep these centers here as you follow the moves.")
-                                .font(.subheadline).foregroundStyle(Color(white: 0.35))
-                        } else {
-                            Text(selected == 1 ? "Two colors, one piece. Find the white outline and drag to see both sides." : "Three colors, one piece. Find the white outline and drag to see all three sides.")
-                                .font(.subheadline).foregroundStyle(Color(white: 0.35))
-                        }
-                        if plan.solution.moves.isEmpty {
-                            Label("Your cube is already solved", systemImage: "checkmark.circle.fill").font(.headline)
-                            Text("Go back and try a mixed cube.").font(.subheadline)
-                        } else {
-                            NavigationLink {
-                                ManualSolutionView(solution: plan.solution, teachingPlan: plan, onComplete: {})
-                            } label: { Text("Show my first goal").frame(maxWidth: .infinity) }.buttonStyle(CubePrimaryButton())
+                            if page < pages - 1 {
+                                Button { page += 1 } label: { Text(page == 0 ? "Got it, I’m holding it" : "Next").frame(maxWidth: .infinity) }
+                                    .buttonStyle(CubePrimaryButton())
+                            } else if plan.solution.moves.isEmpty {
+                                Label("Your cube is already solved", systemImage: "checkmark.circle.fill").font(.headline)
+                            } else {
+                                NavigationLink {
+                                    ManualSolutionView(solution: plan.solution, teachingPlan: plan, onComplete: {})
+                                } label: { Text(startLabel).frame(maxWidth: .infinity) }.buttonStyle(CubePrimaryButton())
+                            }
                         }
                     }.cubeDrawer()
                 }.padding(.top, 20).frame(maxWidth: 700).frame(maxWidth: .infinity)
@@ -240,21 +245,92 @@ private struct LearningIntroduction: View {
             .navigationTitle("Meet your cube").navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(CubeStyle.stage, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .onAppear { highlightExample() }
-            .onChange(of: selected) { _, _ in highlightExample() }
+            .onAppear { showExample(page) }
+            .onChange(of: page) { _, newPage in showExample(newPage) }
     }
+
+    private var title: String {
+        ["Hold your cube like this", "Edges have two colors", "Corners have three colors", "How I’ll tell you to turn", "Our plan: three layers"][page]
+    }
+
+    private var startLabel: String {
+        guard let first = plan.lessons.first?.stage else { return "Let’s begin" }
+        return first == .cross ? "Start with the cross" : "Start at goal \(first.number)"
+    }
+
+    @ViewBuilder private var pageContent: some View {
+        switch page {
+        case 0:
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 20) { holdingColors }
+                VStack(alignment: .leading, spacing: 12) { holdingColors }
+            }
+            Text("Pick up your cube and turn it until it looks like the one above.")
+            teacherNote("The center pieces never move. Each one tells you what color its whole side will be when you’re done. Keep holding the cube this way for the entire lesson — I’ll always describe turns from here.")
+        case 1:
+            Text("The outlined piece is an edge. It sits between two centers and shows two colors.")
+            teacherNote("Every edge has exactly one correct home: between the two centers that match its colors. Drag the cube to see both sides of this one.")
+        case 2:
+            Text("The outlined piece is a corner. It sits where three sides meet and shows three colors.")
+            teacherNote("A corner belongs where its three matching centers meet. Twelve edges and eight corners — that’s all you’ll ever move.")
+        case 3:
+            VStack(alignment: .leading, spacing: 10) {
+                turnExample(CubeMove(.right))
+                turnExample(CubeMove(.up))
+                turnExample(CubeMove(.front))
+            }
+            teacherNote("I’ll say which part to turn and which way, like “turn the right side up”. A blue arrow on the cube shows the same thing. If you’re ever unsure, tap Show me and watch it first.")
+        default:
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(CubeLayer.allCases, id: \.self) { layer in
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text("\(layer.rawValue + 1)").font(.headline.monospacedDigit()).frame(width: 28, height: 28)
+                            .background(CubeStyle.action.opacity(0.12), in: Circle()).foregroundStyle(CubeStyle.action)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(layer.title).font(.headline)
+                            Text(layer.stages.map { $0.headline(colors) }.joined(separator: " · "))
+                                .font(.subheadline).foregroundStyle(Color(white: 0.35))
+                        }
+                    }
+                }
+            }
+            teacherNote("We solve from the bottom up, one small goal at a time. Before each goal I’ll show you what it looks like, then we’ll do it together, one piece at a time.")
+        }
+    }
+
+    private func teacherNote(_ text: String) -> some View {
+        Text(text).font(.subheadline).foregroundStyle(Color(white: 0.35)).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func turnExample(_ move: CubeMove) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: move.directionSymbol).font(.title3.bold()).foregroundStyle(CubeStyle.action).frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(move.spokenInstruction).font(.subheadline.bold())
+                Text(move.handHint).font(.caption).foregroundStyle(Color(white: 0.35))
+            }
+        }.accessibilityElement(children: .combine)
+    }
+
     @ViewBuilder private var holdingColors: some View {
-        LearningColorCue(color: plan.solution.initialCube.centerColors[CubeFaceID.front.rawValue], caption: "toward you")
-        LearningColorCue(color: plan.solution.initialCube.centerColors[CubeFaceID.up.rawValue], caption: "on top")
+        LearningColorCue(color: front, caption: "center toward you")
+        LearningColorCue(color: colors.top, caption: "center on top")
     }
-    private func highlightExample() {
+
+    private func showExample(_ page: Int) {
         scene.resetView()
-        if selected == 0 {
+        scene.showsTurnGuide = page == 3
+        scene.selectedFace = .right
+        scene.amount = .clockwise
+        switch page {
+        case 0:
             scene.sourceHighlights = [CubeFaceID.front.rawValue * 9 + 4, CubeFaceID.up.rawValue * 9 + 4]
-        } else {
-            let index = CubeFaceID.front.rawValue * 9 + (selected == 1 ? 1 : 2)
+        case 1, 2:
+            let index = CubeFaceID.front.rawValue * 9 + (page == 1 ? 1 : 2)
             let position = CubeRenderLayout.facelets[index].position
             scene.sourceHighlights = Set(CubeRenderLayout.facelets.filter { $0.position == position }.map(\.index))
+        default:
+            scene.sourceHighlights = []
         }
         scene.refreshHighlights()
     }

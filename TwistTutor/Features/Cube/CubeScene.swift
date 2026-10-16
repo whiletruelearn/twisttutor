@@ -104,6 +104,8 @@ final class CubeScene {
     func detach() {
         cameraUpdates?.cancel(); cameraUpdates = nil
         cancel()
+        // The anchor must leave the old view's scene, or a re-attached view renders nothing.
+        view?.scene.removeAnchor(anchor)
         anchor.removeFromParent()
         view = nil
     }

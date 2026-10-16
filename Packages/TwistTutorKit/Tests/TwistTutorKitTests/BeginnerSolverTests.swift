@@ -74,3 +74,51 @@ final class BeginnerSolverTests: XCTestCase {
         do { _ = try await work.value; XCTFail("Expected cancellation") } catch is CancellationError {} catch { XCTFail("\(error)") }
     }
 }
+
+final class BeginnerCoachingTests: XCTestCase {
+    /// The spoken directions must agree with the cube geometry, seen from the holding position.
+    func testSpokenDirectionsMatchGeometry() throws {
+        let solved = try CubeState.solved()
+        func destinationFace(of index: Int, after move: String) throws -> CubeFaceID {
+            let id = solved.stickers[index].id
+            let moved = solved.applying(try MoveNotation.parse(move))
+            return CubeFaceID(rawValue: moved.stickers.firstIndex { $0.id == id }! / 9)!
+        }
+        let front = CubeFaceID.front.rawValue * 9, up = CubeFaceID.up.rawValue * 9
+        XCTAssertEqual(try destinationFace(of: front + 5, after: "R"), .up)      // right side up
+        XCTAssertEqual(try destinationFace(of: front + 3, after: "L"), .down)    // left side down
+        XCTAssertEqual(try destinationFace(of: front + 1, after: "U"), .left)    // top layer left
+        XCTAssertEqual(try destinationFace(of: front + 7, after: "D"), .right)   // bottom layer right
+        XCTAssertEqual(try destinationFace(of: up + 7, after: "F"), .right)      // front clockwise
+        XCTAssertEqual(try destinationFace(of: up + 1, after: "B"), .left)       // back's top slides left
+        XCTAssertEqual(CubeMove(.right).spokenInstruction, "Turn the right side up")
+        XCTAssertEqual(CubeMove(.up, .counterclockwise).spokenInstruction, "Turn the top layer to the right")
+        XCTAssertEqual(CubeMove(.left, .counterclockwise).shortLabel, "Left ↑")
+    }
+
+    func testLessonsFollowOnePieceAtATime() async throws {
+        let cube = try CubeState.solved().applying(MoveNotation.parse("R U R' U' F2 D L2 B U2 R' F D'"))
+        let plan = try await BeginnerSolver().plan(for: cube)
+        let colors = CoachColors(cube: cube)
+        for stage in [BeginnerStage.cross, .firstCorners, .middleEdges] {
+            let lessons = plan.lessons.filter { $0.stage == stage }
+            if stage != .middleEdges { XCTAssertLessThanOrEqual(lessons.count, 4, "\(stage) should teach one lesson per piece") }
+            XCTAssertTrue(lessons.allSatisfy { $0.piece != nil })
+        }
+        for lesson in plan.lessons {
+            XCTAssertFalse(lesson.headline(colors).isEmpty)
+            XCTAssertFalse(lesson.coaching(colors).isEmpty)
+            XCTAssertLessThanOrEqual(lesson.setupMoveCount, lesson.moveRange.count)
+            XCTAssertTrue(lesson.setupMoveCount == 0 || plan.solution.moves[lesson.moveRange.lowerBound].face == .up)
+        }
+    }
+}
+
+extension BeginnerCoachingTests {
+    /// The Learn tab's practice cube must exercise every goal. Keep in sync with LearnHomeView.practiceScramble.
+    func testPracticeCubeTeachesEveryGoal() async throws {
+        let cube = try CubeState.solved().applying(MoveNotation.parse("D2 F' R U2 L B2 D' R2 F L' U B' R2 D F2 U' L2 B R'"))
+        let plan = try await BeginnerSolver().plan(for: cube)
+        XCTAssertEqual(Set(plan.lessons.map(\.stage)), Set(BeginnerStage.allCases))
+    }
+}
